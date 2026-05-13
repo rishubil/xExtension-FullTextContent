@@ -1,0 +1,8 @@
+{
+	"name": "Full Text Content",
+	"author": "rishubil",
+	"description": "Replace each entry's body with cleaned full-text content fetched from the source URL.",
+	"version": "0.1.0",
+	"entrypoint": "FullTextContent",
+	"type": "user"
+}

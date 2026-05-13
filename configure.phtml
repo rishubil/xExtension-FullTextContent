@@ -1,0 +1,174 @@
+<?php
+/** @var FullTextContentExtension $this */
+
+$defuddleManager = $this->buildDefuddleManager();
+$binaryResolver  = $this->buildBinaryResolver();
+
+$installedDefuddle  = $defuddleManager->installedVersion();
+$latestDefuddle     = $defuddleManager->latestKnownVersion();
+$lastCheck          = $defuddleManager->lastCheckTimestamp();
+$obscuraDownloaded  = $binaryResolver->isDownloaded();
+$obscuraBinPath     = $binaryResolver->binaryPath();
+
+$nodeBinary           = $this->getUserConfigurationString('node_binary') ?? 'node';
+$obscuraDownloadUrl   = $this->getUserConfigurationString('obscura_download_url') ?? '';
+$obscuraBinaryOverride = $this->getUserConfigurationString('obscura_binary') ?? '';
+$defuddleVersion      = $this->getUserConfigurationString('defuddle_version') ?? 'latest';
+$checkInterval        = $this->getUserConfigurationInt('defuddle_check_interval') ?? 168;
+$fetchTimeout         = $this->getUserConfigurationInt('fetch_timeout') ?? 30;
+
+$feedDao   = FreshRSS_Factory::createFeedDao();
+$allFeeds  = $feedDao->listFeeds();
+$categories = [];
+foreach ($allFeeds as $feed) {
+	$catName = $feed->category() ? $feed->category()->name() : _t('gen.short.without_category');
+	$categories[$catName][] = $feed;
+}
+ksort($categories);
+?>
+
+<div class="extension-configure">
+
+	<form method="post" action="">
+
+		<section>
+			<h2><?php echo _t('ext.fulltextcontent.config.global'); ?></h2>
+
+			<div class="form-group">
+				<label for="node_binary"><?php echo _t('ext.fulltextcontent.config.node_binary'); ?></label>
+				<input type="text" id="node_binary" name="node_binary"
+					value="<?php echo htmlspecialchars($nodeBinary, ENT_QUOTES); ?>"
+					placeholder="node" />
+				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.node_binary_help'); ?></p>
+			</div>
+
+			<div class="form-group">
+				<label for="obscura_download_url"><?php echo _t('ext.fulltextcontent.config.obscura_download_url'); ?></label>
+				<input type="text" id="obscura_download_url" name="obscura_download_url"
+					value="<?php echo htmlspecialchars($obscuraDownloadUrl, ENT_QUOTES); ?>"
+					placeholder="<?php echo htmlspecialchars($binaryResolver->defaultDownloadUrl(), ENT_QUOTES); ?>" />
+				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.obscura_download_url_help'); ?></p>
+			</div>
+
+			<div class="form-group">
+				<label for="obscura_binary"><?php echo _t('ext.fulltextcontent.config.obscura_binary'); ?></label>
+				<input type="text" id="obscura_binary" name="obscura_binary"
+					value="<?php echo htmlspecialchars($obscuraBinaryOverride, ENT_QUOTES); ?>"
+					placeholder="<?php echo htmlspecialchars($obscuraBinPath, ENT_QUOTES); ?>" />
+				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.obscura_binary_help'); ?></p>
+			</div>
+
+			<div class="form-group">
+				<label for="defuddle_version"><?php echo _t('ext.fulltextcontent.config.defuddle_version'); ?></label>
+				<input type="text" id="defuddle_version" name="defuddle_version"
+					value="<?php echo htmlspecialchars($defuddleVersion, ENT_QUOTES); ?>"
+					placeholder="latest" />
+				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.defuddle_version_help'); ?></p>
+			</div>
+
+			<div class="form-group">
+				<label for="defuddle_check_interval"><?php echo _t('ext.fulltextcontent.config.defuddle_check_interval'); ?></label>
+				<input type="number" id="defuddle_check_interval" name="defuddle_check_interval"
+					value="<?php echo (int) $checkInterval; ?>" min="1" />
+				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.defuddle_check_interval_help'); ?></p>
+			</div>
+
+			<div class="form-group">
+				<label for="fetch_timeout"><?php echo _t('ext.fulltextcontent.config.fetch_timeout'); ?></label>
+				<input type="number" id="fetch_timeout" name="fetch_timeout"
+					value="<?php echo (int) $fetchTimeout; ?>" min="5" />
+				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.fetch_timeout_help'); ?></p>
+			</div>
+
+			<button type="submit" class="btn btn-primary">
+				<?php echo _t('ext.fulltextcontent.config.save'); ?>
+			</button>
+		</section>
+
+	</form>
+
+	<hr />
+
+	<section>
+		<h2><?php echo _t('ext.fulltextcontent.config.status'); ?></h2>
+
+		<table class="table">
+			<tbody>
+				<tr>
+					<th><?php echo _t('ext.fulltextcontent.config.obscura_status'); ?></th>
+					<td>
+						<?php if ($obscuraDownloaded): ?>
+							<code><?php echo htmlspecialchars($obscuraBinPath, ENT_QUOTES); ?></code>
+						<?php else: ?>
+							<em><?php echo _t('ext.fulltextcontent.config.obscura_not_downloaded'); ?></em>
+						<?php endif; ?>
+					</td>
+				</tr>
+				<tr>
+					<th><?php echo _t('ext.fulltextcontent.config.defuddle_installed'); ?></th>
+					<td><?php echo $installedDefuddle !== null ? htmlspecialchars($installedDefuddle, ENT_QUOTES) : '<em>' . _t('ext.fulltextcontent.config.defuddle_not_installed') . '</em>'; ?></td>
+				</tr>
+				<tr>
+					<th><?php echo _t('ext.fulltextcontent.config.defuddle_latest_known'); ?></th>
+					<td><?php echo $latestDefuddle !== null ? htmlspecialchars($latestDefuddle, ENT_QUOTES) : '—'; ?></td>
+				</tr>
+				<tr>
+					<th><?php echo _t('ext.fulltextcontent.config.defuddle_last_check'); ?></th>
+					<td><?php echo $lastCheck !== null ? date('Y-m-d H:i:s', $lastCheck) : _t('ext.fulltextcontent.config.defuddle_never_checked'); ?></td>
+				</tr>
+			</tbody>
+		</table>
+
+		<form method="post" action="" style="display:inline-block; margin-right: 0.5em;">
+			<input type="hidden" name="fulltextcontent_action" value="update_defuddle" />
+			<button type="submit" class="btn btn-default">
+				<?php echo _t('ext.fulltextcontent.config.update_defuddle'); ?>
+			</button>
+		</form>
+
+		<form method="post" action="" style="display:inline-block;">
+			<input type="hidden" name="fulltextcontent_action" value="redownload_obscura" />
+			<button type="submit" class="btn btn-default">
+				<?php echo _t('ext.fulltextcontent.config.redownload_obscura'); ?>
+			</button>
+		</form>
+	</section>
+
+	<hr />
+
+	<section>
+		<h2><?php echo _t('ext.fulltextcontent.config.per_feed'); ?></h2>
+		<p><?php echo _t('ext.fulltextcontent.config.per_feed_help'); ?></p>
+
+		<form method="post" action="">
+
+			<?php if (empty($categories)): ?>
+				<p><?php echo _t('ext.fulltextcontent.config.no_feeds'); ?></p>
+			<?php else: ?>
+				<?php foreach ($categories as $catName => $feeds): ?>
+					<fieldset>
+						<legend><?php echo htmlspecialchars($catName, ENT_QUOTES); ?></legend>
+						<?php foreach ($feeds as $feed): ?>
+							<div class="form-check">
+								<input class="form-check-input" type="checkbox"
+									name="fulltextcontent_feeds[]"
+									id="feed_<?php echo (int) $feed->id(); ?>"
+									value="<?php echo (int) $feed->id(); ?>"
+									<?php echo $feed->attributeBool('fulltextcontent_enabled') ? 'checked' : ''; ?> />
+								<label class="form-check-label" for="feed_<?php echo (int) $feed->id(); ?>">
+									<?php echo htmlspecialchars($feed->name(), ENT_QUOTES); ?>
+								</label>
+							</div>
+						<?php endforeach; ?>
+					</fieldset>
+				<?php endforeach; ?>
+
+				<button type="submit" class="btn btn-primary" style="margin-top: 1em;">
+					<?php echo _t('ext.fulltextcontent.config.save'); ?>
+				</button>
+			<?php endif; ?>
+
+		</form>
+	</section>
+
+</div>
