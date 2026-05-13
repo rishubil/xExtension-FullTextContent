@@ -71,7 +71,7 @@ final class FullTextContentExtension extends Minz_Extension {
 
 		try {
 			$pipeline = $this->buildPipeline();
-			$html = $pipeline->run($url);
+			$html = $pipeline->run($url, $this->feedWait($feed), $this->feedWaitUntil($feed));
 			if ($html !== '') {
 				$entry->_content($html);
 			}
@@ -110,19 +110,24 @@ final class FullTextContentExtension extends Minz_Extension {
 		$this->setUserConfigurationValue('defuddle_check_interval', (int) Minz_Request::paramString('defuddle_check_interval'));
 		$this->setUserConfigurationValue('fetch_timeout', (int) Minz_Request::paramString('fetch_timeout'));
 
-		$rulesRaw = Minz_Request::paramString('obscura_url_rules');
-		$decoded = json_decode($rulesRaw, true);
-		$this->setUserConfigurationValue('obscura_url_rules', is_array($decoded) ? json_encode($decoded) : '[]');
+		// Save per-feed toggles and wait settings
+		$enabledFeeds  = Minz_Request::paramArray('fulltextcontent_feeds') ?: [];
+		$waitValues    = Minz_Request::paramArray('fulltextcontent_wait') ?: [];
+		$waitUntilValues = Minz_Request::paramArray('fulltextcontent_wait_until') ?: [];
 
-		// Save per-feed toggles
-		$enabledFeeds = Minz_Request::paramArray('fulltextcontent_feeds') ?: [];
 		$feedDao = FreshRSS_Factory::createFeedDao();
 		foreach ($feedDao->listFeeds() as $feed) {
-			$enabled = in_array((string) $feed->id(), $enabledFeeds, true);
-			$feed->_attribute('fulltextcontent_enabled', $enabled);
+			$id = (string) $feed->id();
+			$feed->_attribute('fulltextcontent_enabled', in_array($id, $enabledFeeds, true));
+
+			$wait = isset($waitValues[$id]) ? (int) $waitValues[$id] : 0;
+			$feed->_attribute('fulltextcontent_wait', $wait > 0 ? $wait : null);
+
+			$waitUntil = isset($waitUntilValues[$id]) ? trim($waitUntilValues[$id]) : '';
+			$feed->_attribute('fulltextcontent_wait_until', $waitUntil !== '' ? $waitUntil : null);
+
 			$feedDao->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
 		}
-
 	}
 
 	// -------------------------------------------------------------------------
@@ -148,19 +153,13 @@ final class FullTextContentExtension extends Minz_Extension {
 	}
 
 	public function buildPipeline(): FullTextPipeline {
-		$pipeline = new FullTextPipeline(
+		return new FullTextPipeline(
 			$this->buildBinaryResolver(),
 			$this->buildDefuddleManager(),
 			$this->getUserConfigurationString('node_binary') ?? self::DEFAULT_NODE_BINARY,
 			$this->getUserConfigurationInt('fetch_timeout') ?? self::DEFAULT_FETCH_TIMEOUT,
 			$this->getUserConfigurationString('obscura_binary') ?? ''
 		);
-		$rulesJson = $this->getUserConfigurationString('obscura_url_rules') ?? '[]';
-		$rules = json_decode($rulesJson, true);
-		if (is_array($rules)) {
-			$pipeline->setFetchRules($rules);
-		}
-		return $pipeline;
 	}
 
 	public function buildBinaryResolver(): BinaryResolver {
@@ -180,5 +179,13 @@ final class FullTextContentExtension extends Minz_Extension {
 
 	public function getExtDataDir(): string {
 		return rtrim(DATA_PATH, '/') . '/' . self::DATA_SUBDIR;
+	}
+
+	public function feedWait(FreshRSS_Feed $feed): int {
+		return (int) ($feed->attribute('fulltextcontent_wait') ?? 0);
+	}
+
+	public function feedWaitUntil(FreshRSS_Feed $feed): string {
+		return (string) ($feed->attribute('fulltextcontent_wait_until') ?? '');
 	}
 }
