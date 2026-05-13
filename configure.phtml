@@ -154,7 +154,7 @@ ksort($categories);
 									name="fulltextcontent_feeds[]"
 									id="feed_<?php echo (int) $feed->id(); ?>"
 									value="<?php echo (int) $feed->id(); ?>"
-									<?php echo $feed->attributeBool('fulltextcontent_enabled') ? 'checked' : ''; ?> />
+									<?php echo $feed->attributeBoolean('fulltextcontent_enabled') ? 'checked' : ''; ?> />
 								<label class="form-check-label" for="feed_<?php echo (int) $feed->id(); ?>">
 									<?php echo htmlspecialchars($feed->name(), ENT_QUOTES); ?>
 								</label>
