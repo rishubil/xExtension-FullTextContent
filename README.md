@@ -39,20 +39,27 @@ The FreshRSS official Docker image does not include Node.js. Use the provided en
 # docker-compose.yml
 services:
   freshrss:
-    image: freshrss/freshrss:latest
+    image: freshrss/freshrss:latest  # or :alpine
     entrypoint: /var/www/FreshRSS/extensions/xExtension-FullTextContent/scripts/entrypoint.sh
-    command: ["apache2-foreground"]
     volumes:
       - ./extensions:/var/www/FreshRSS/extensions
       - ./data:/var/www/FreshRSS/data
 ```
 
-The `entrypoint.sh` script installs node/npm (idempotent: skips if already present) then delegates to the original `/entrypoint.sh`.
+The `entrypoint.sh` script installs node/npm (idempotent: skips if already present) then delegates to `/var/www/FreshRSS/Docker/entrypoint.sh`.
 
 ### Option B — custom Dockerfile
 
 ```dockerfile
+# Debian-based (freshrss/freshrss:latest)
 FROM freshrss/freshrss:latest
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+```dockerfile
+# Alpine-based (freshrss/freshrss:alpine)
+FROM freshrss/freshrss:alpine
 RUN apk add --no-cache nodejs npm
 ```
 
@@ -90,6 +97,10 @@ Runs standalone (no FreshRSS or Docker required). PHP 8.1+ is the only dependenc
 php scripts/test.php
 ```
 
+### Shell script tests
+
+Verifies that `install-node.sh` and `entrypoint.sh` work correctly inside both `freshrss/freshrss:latest` (Debian) and `freshrss/freshrss:alpine`. These run automatically as part of `run-integration-tests.sh`.
+
 ### Integration tests
 
 Runs the **real** obscura binary and the **real** defuddle npm package (no mocks) inside a custom Docker image built on top of `freshrss/freshrss:latest`. The runner initialises FreshRSS via its CLI, then exercises both the extraction pipeline and the FreshRSS extension lifecycle end-to-end.
@@ -107,10 +118,11 @@ DOCKER_HOST=unix:///tmp/docker.sock bash scripts/run-integration-tests.sh
 The script:
 
 1. **Builds the test image** (`tests/integration/Dockerfile`) — installs Node.js, downloads obscura, and installs defuddle at the pinned version (`0.18.1`). Docker layer caching makes subsequent runs fast.
-2. Starts a temporary container from the built image.
-3. Initialises FreshRSS via `cli/do-install.php` + `cli/create-user.php`.
-4. Runs both test suites against `file:///…/tests/integration/fixtures/sample.html` (obscura supports `file://` URLs, so no network or local HTTP server is needed inside the container).
-5. Tears the container and volumes down on exit.
+2. **Runs shell script tests** against `freshrss/freshrss:latest` and `freshrss/freshrss:alpine` using real package managers.
+3. Starts a temporary container from the built image.
+4. Initialises FreshRSS via `cli/do-install.php` + `cli/create-user.php`.
+5. Runs both test suites against `file:///…/tests/integration/fixtures/sample.html` (obscura supports `file://` URLs, so no network or local HTTP server is needed inside the container).
+6. Tears the container and volumes down on exit.
 
 The fixture exercises real defuddle behaviour: the suite asserts that article paragraphs, bold/italic, links, and `<h2>` are preserved while site banners, sidebars, footers, and inline `<script>` content are stripped.
 
