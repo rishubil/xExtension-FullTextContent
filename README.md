@@ -1,5 +1,9 @@
 # xExtension-FullTextContent
 
+> **⚠️ Work In Progress**
+> This extension is currently under active development and is **not yet ready for production use**.
+> Functionality may be incomplete, APIs may change without notice, and bugs are expected.
+
 A [FreshRSS](https://freshrss.org) extension that replaces each feed entry's body with cleaned full-text content fetched from the source URL.
 
 ## How it works
