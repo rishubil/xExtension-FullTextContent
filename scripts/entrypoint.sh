@@ -1,12 +1,18 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Thin wrapper around the FreshRSS container entrypoint.
 # Runs install-node.sh (idempotent) before handing off to the original entrypoint.
-set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+set -o errexit
+set -o nounset
+set -o pipefail
+if [[ "${TRACE-0}" == "1" ]]; then
+    set -o xtrace
+fi
 
-sh "${SCRIPT_DIR}/install-node.sh" || {
-	echo "[FullTextContent] node installation failed; continuing without node." >&2
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+bash ./install-node.sh || {
+    echo "[FullTextContent] node installation failed; continuing without node." >&2
 }
 
 # The FreshRSS official image uses /entrypoint.sh.

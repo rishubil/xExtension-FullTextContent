@@ -8,7 +8,7 @@ services:
     user: root
     entrypoint: ""
     command:
-      - sh
+      - bash
       - /var/www/FreshRSS/extensions/xExtension-FullTextContent/tests/integration/run-in-container.sh
     environment:
       DATA_PATH: /var/www/FreshRSS/data
