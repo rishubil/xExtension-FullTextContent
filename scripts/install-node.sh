@@ -1,11 +1,10 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Idempotent: exits immediately if node and npm are already available.
 
-set -o errexit
-set -o nounset
-set -o pipefail
-if [[ "${TRACE-0}" == "1" ]]; then
-    set -o xtrace
+set -e
+set -u
+if [ "${TRACE-0}" = "1" ]; then
+    set -x
 fi
 
 if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then

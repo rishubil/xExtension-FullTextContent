@@ -33,6 +33,26 @@ DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
 export DOCKER_HOST
 
 # ---------------------------------------------------------------------------
+# Shell-script test helpers
+# ---------------------------------------------------------------------------
+SHELL_TEST_PASS=0
+SHELL_TEST_FAIL=0
+
+run_shell_test() {
+    local label="$1"
+    shift
+    local result=0
+    "$@" >/dev/null 2>&1 || result=$?
+    if [[ "${result}" -eq 0 ]]; then
+        echo "  [PASS] ${label}"
+        (( SHELL_TEST_PASS++ )) || true
+    else
+        echo "  [FAIL] ${label}"
+        (( SHELL_TEST_FAIL++ )) || true
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # 1. Build the test image (Docker layer cache makes re-runs fast)
 # ---------------------------------------------------------------------------
 echo "==> Building test image..."
@@ -41,7 +61,45 @@ docker compose \
     build
 
 # ---------------------------------------------------------------------------
-# 2. Run the test suite in a fresh container
+# 2. Run shell script tests against the real FreshRSS images
+# ---------------------------------------------------------------------------
+echo ""
+echo "==> Running shell script tests..."
+
+for image in freshrss/freshrss:latest freshrss/freshrss:alpine; do
+    echo ""
+    echo "=== Shell Script Tests (${image}) ==="
+
+    run_shell_test "install-node.sh: installs node and npm" \
+        docker run --rm \
+            -v "${PROJECT_ROOT}/scripts:/scripts:ro" \
+            "${image}" \
+            sh -c 'sh /scripts/install-node.sh >/dev/null 2>&1 && command -v node && command -v npm'
+
+    run_shell_test "install-node.sh: skips when already installed" \
+        docker run --rm \
+            -v "${PROJECT_ROOT}/scripts:/scripts:ro" \
+            "${image}" \
+            sh -c 'sh /scripts/install-node.sh >/dev/null 2>&1
+                   output=$(sh /scripts/install-node.sh 2>&1)
+                   echo "$output" | grep -q "already installed"'
+
+    run_shell_test "entrypoint.sh: install-node.sh is called before exec" \
+        docker run --rm \
+            -v "${PROJECT_ROOT}/scripts:/scripts:ro" \
+            "${image}" \
+            sh -c '(timeout 30 sh /scripts/entrypoint.sh 2>/dev/null || true)
+                   command -v node && command -v npm'
+done
+
+echo ""
+total_shell=$(( SHELL_TEST_PASS + SHELL_TEST_FAIL ))
+printf -- "--- Shell script results: %d/%d passed" "${SHELL_TEST_PASS}" "${total_shell}"
+[[ "${SHELL_TEST_FAIL}" -gt 0 ]] && printf ", %d FAILED" "${SHELL_TEST_FAIL}"
+printf " ---\n"
+
+# ---------------------------------------------------------------------------
+# 3. Run the integration test suite in a fresh container
 # ---------------------------------------------------------------------------
 cleanup() {
     echo ""
@@ -56,15 +114,37 @@ echo ""
 echo "==> Running integration tests (Docker host: ${DOCKER_HOST})"
 echo ""
 
-EXIT_CODE=0
+INTEGRATION_EXIT=0
 docker compose \
     --file "${COMPOSE_FILE}" \
-    run --rm tests || EXIT_CODE=$?
+    run --rm tests || INTEGRATION_EXIT=$?
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+echo ""
+echo "==> Overall Results"
+echo ""
+
+shell_total=$(( SHELL_TEST_PASS + SHELL_TEST_FAIL ))
+printf "    Shell script tests:  %d/%d passed" "${SHELL_TEST_PASS}" "${shell_total}"
+[[ "${SHELL_TEST_FAIL}" -gt 0 ]] && printf ", %d FAILED" "${SHELL_TEST_FAIL}"
+printf "\n"
+
+if [[ "${INTEGRATION_EXIT}" -eq 0 ]]; then
+    printf "    Integration tests:   PASSED\n"
+else
+    printf "    Integration tests:   FAILED (exit %d)\n" "${INTEGRATION_EXIT}"
+fi
 
 echo ""
+EXIT_CODE=0
+[[ "${SHELL_TEST_FAIL}" -gt 0 ]] && EXIT_CODE=1
+[[ "${INTEGRATION_EXIT}" -ne 0 ]] && EXIT_CODE=1
+
 if [[ "${EXIT_CODE}" -eq 0 ]]; then
-    echo "Integration tests PASSED."
+    echo "All tests PASSED."
 else
-    echo "Integration tests FAILED (exit code ${EXIT_CODE})."
+    echo "Some tests FAILED."
 fi
 exit "${EXIT_CODE}"
