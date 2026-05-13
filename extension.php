@@ -26,7 +26,7 @@ final class FullTextContentExtension extends Minz_Extension {
 
 	public function onEntryBeforeInsert(FreshRSS_Entry $entry): ?FreshRSS_Entry {
 		$feed = $entry->feed();
-		if ($feed === null || !$feed->attributeBool('fulltextcontent_enabled')) {
+		if ($feed === null || !$feed->attributeBoolean('fulltextcontent_enabled')) {
 			return $entry;
 		}
 
@@ -81,7 +81,7 @@ final class FullTextContentExtension extends Minz_Extension {
 		$feedDao = FreshRSS_Factory::createFeedDao();
 		foreach ($feedDao->listFeeds() as $feed) {
 			$enabled = in_array((string) $feed->id(), $enabledFeeds, true);
-			$feed->_attributes('fulltextcontent_enabled', $enabled);
+			$feed->_attribute('fulltextcontent_enabled', $enabled);
 			$feedDao->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
 		}
 
