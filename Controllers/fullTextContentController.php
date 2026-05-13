@@ -13,21 +13,6 @@ final class FreshExtension_fullTextContent_Controller extends Minz_ActionControl
 		}
 	}
 
-	public function stringsAction(): void {
-		$ext = Minz_ExtensionManager::findExtension('Full Text Content');
-		if ($ext instanceof Minz_Extension) {
-			$ext->registerTranslates();
-		}
-		$this->view->ftc_strings = json_encode([
-			'fetching' => _t('ext.fulltextcontent.ui.fetching'),
-			'success'  => _t('ext.fulltextcontent.ui.success'),
-			'error'    => _t('ext.fulltextcontent.ui.error'),
-		]);
-		$this->view->_layout(false);
-		$this->view->_path('fullTextContent/strings.js');
-		header('Content-Type: application/javascript; charset=UTF-8');
-	}
-
 	public function refetchAction(): void {
 		$this->view->_layout(false);
 

@@ -27,8 +27,6 @@ final class FullTextContentExtension extends Minz_Extension {
 			$this->registerHook(Minz_HookType::EntryBeforeDisplay, [$this, 'addRefetchButton']);
 			Minz_View::appendScript($this->getFileUrl('script.js', 'js'), false, false, false);
 			Minz_View::appendStyle($this->getFileUrl('style.css', 'css'));
-			Minz_View::appendScript(_url('fullTextContent', 'strings'), false, true, false);
-			$this->registerViews();
 			$this->registerController('fullTextContent');
 		}
 	}

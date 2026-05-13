@@ -1,3 +1,11 @@
+/* jshint ignore:start */
+var ftc_strings = (typeof ftc_strings !== 'undefined') ? ftc_strings : {
+	fetching: 'Fetching content…',
+	success:  'Content updated.',
+	error:    'Failed to fetch content.',
+};
+/* jshint ignore:end */
+
 (function () {
 	function init() {
 		var global = document.getElementById('global');
