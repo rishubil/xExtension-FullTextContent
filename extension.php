@@ -21,7 +21,43 @@ final class FullTextContentExtension extends Minz_Extension {
 	#[\Override]
 	public function init(): void {
 		parent::init();
+		$this->registerTranslates();
 		$this->registerHook(Minz_HookType::EntryBeforeInsert, [$this, 'onEntryBeforeInsert']);
+		if (!FreshRSS_Context::$isCli) {
+			$this->registerHook(Minz_HookType::EntryBeforeDisplay, [$this, 'addRefetchButton']);
+			Minz_View::appendScript($this->getFileUrl('script.js', true), false, false, false);
+			Minz_View::appendStyle($this->getFileUrl('style.css', true));
+			Minz_View::appendScript(_url('fullTextContent', 'strings'), false, true, false);
+			$this->registerViews();
+			$this->registerController('fullTextContent');
+		}
+	}
+
+	public function addRefetchButton(FreshRSS_Entry $entry): FreshRSS_Entry {
+		$this->registerTranslates();
+
+		$feed = $entry->feed();
+		if ($feed === null || !$feed->attributeBoolean('fulltextcontent_enabled')) {
+			return $entry;
+		}
+
+		$url = Minz_Url::display([
+			'c'      => 'fullTextContent',
+			'a'      => 'refetch',
+			'params' => ['id' => (string) $entry->id()],
+		]);
+
+		$entry->_content(
+			'<div class="ftc-refetch">'
+			. '<a class="btn" href="' . htmlspecialchars($url, ENT_QUOTES) . '">'
+			. _t('ext.fulltextcontent.ui.refetch_button')
+			. '</a>'
+			. '<span class="ftc-status hidden"></span>'
+			. '</div>'
+			. $entry->content()
+		);
+
+		return $entry;
 	}
 
 	public function onEntryBeforeInsert(FreshRSS_Entry $entry): ?FreshRSS_Entry {

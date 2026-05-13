@@ -40,6 +40,13 @@ return [
 			'save' => 'Save',
 		],
 
+		'ui' => [
+			'refetch_button' => 'Re-fetch Content',
+			'fetching'       => 'Fetching content…',
+			'success'        => 'Content updated.',
+			'error'          => 'Failed to fetch content.',
+		],
+
 		'alert' => [
 			'saved' => 'Settings saved.',
 			'obscura_redownloaded' => 'Obscura binary re-downloaded successfully.',
