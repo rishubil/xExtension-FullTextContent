@@ -14,4 +14,5 @@ sh ./install-node.sh || {
     echo "[FullTextContent] node installation failed; continuing without node." >&2
 }
 
+cd /var/www/FreshRSS
 exec /var/www/FreshRSS/Docker/entrypoint.sh "$@"

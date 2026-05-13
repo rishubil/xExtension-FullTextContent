@@ -35,12 +35,34 @@ The FreshRSS official Docker image does not include Node.js. Use the provided en
 
 ### Option A — entrypoint override (recommended)
 
+Debian-based (freshrss/freshrss:latest)
+
 ```yaml
 # docker-compose.yml
 services:
   freshrss:
-    image: freshrss/freshrss:latest  # or :alpine
+    image: freshrss/freshrss:latest
     entrypoint: /var/www/FreshRSS/extensions/xExtension-FullTextContent/scripts/entrypoint.sh
+    command: |
+      sh -c '([ -z "$$CRON_MIN" ] || cron) && \
+      . /etc/apache2/envvars && \
+      exec apache2 -D FOREGROUND $$([ -n "$$OIDC_ENABLED" ] && [ "$$OIDC_ENABLED" -ne 0 ] && echo "-D OIDC_ENABLED")'
+    volumes:
+      - ./extensions:/var/www/FreshRSS/extensions
+      - ./data:/var/www/FreshRSS/data
+```
+
+Alpine-based (freshrss/freshrss:alpine)
+
+```yaml
+# docker-compose.yml
+services:
+  freshrss:
+    image: freshrss/freshrss:alpine
+    entrypoint: /var/www/FreshRSS/extensions/xExtension-FullTextContent/scripts/entrypoint.sh
+    command: |
+      sh -c '([ -z "$$CRON_MIN" ] || crond -d 6) && \
+      exec httpd -D FOREGROUND $([ -n "$$OIDC_ENABLED" ] && [ "$$OIDC_ENABLED" -ne 0 ] && echo "-D OIDC_ENABLED")'
     volumes:
       - ./extensions:/var/www/FreshRSS/extensions
       - ./data:/var/www/FreshRSS/data
@@ -50,15 +72,17 @@ The `entrypoint.sh` script installs node/npm (idempotent: skips if already prese
 
 ### Option B — custom Dockerfile
 
+Debian-based (freshrss/freshrss:latest)
+
 ```dockerfile
-# Debian-based (freshrss/freshrss:latest)
 FROM freshrss/freshrss:latest
 RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 ```
 
+Alpine-based (freshrss/freshrss:alpine)
+
 ```dockerfile
-# Alpine-based (freshrss/freshrss:alpine)
 FROM freshrss/freshrss:alpine
 RUN apk add --no-cache nodejs npm
 ```
