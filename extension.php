@@ -110,6 +110,10 @@ final class FullTextContentExtension extends Minz_Extension {
 		$this->setUserConfigurationValue('defuddle_check_interval', (int) Minz_Request::paramString('defuddle_check_interval'));
 		$this->setUserConfigurationValue('fetch_timeout', (int) Minz_Request::paramString('fetch_timeout'));
 
+		$rulesRaw = Minz_Request::paramString('obscura_url_rules');
+		$decoded = json_decode($rulesRaw, true);
+		$this->setUserConfigurationValue('obscura_url_rules', is_array($decoded) ? json_encode($decoded) : '[]');
+
 		// Save per-feed toggles
 		$enabledFeeds = Minz_Request::paramArray('fulltextcontent_feeds') ?: [];
 		$feedDao = FreshRSS_Factory::createFeedDao();
@@ -144,13 +148,19 @@ final class FullTextContentExtension extends Minz_Extension {
 	}
 
 	public function buildPipeline(): FullTextPipeline {
-		return new FullTextPipeline(
+		$pipeline = new FullTextPipeline(
 			$this->buildBinaryResolver(),
 			$this->buildDefuddleManager(),
 			$this->getUserConfigurationString('node_binary') ?? self::DEFAULT_NODE_BINARY,
 			$this->getUserConfigurationInt('fetch_timeout') ?? self::DEFAULT_FETCH_TIMEOUT,
 			$this->getUserConfigurationString('obscura_binary') ?? ''
 		);
+		$rulesJson = $this->getUserConfigurationString('obscura_url_rules') ?? '[]';
+		$rules = json_decode($rulesJson, true);
+		if (is_array($rules)) {
+			$pipeline->setFetchRules($rules);
+		}
+		return $pipeline;
 	}
 
 	public function buildBinaryResolver(): BinaryResolver {

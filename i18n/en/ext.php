@@ -19,6 +19,14 @@ return [
 			'fetch_timeout' => 'Fetch timeout (seconds)',
 			'fetch_timeout_help' => 'Maximum time to wait for obscura to fetch a URL.',
 
+			'url_rules' => 'URL Wait Rules',
+			'url_rules_help' => 'Override the wait time and wait condition for specific host patterns. Use <code>*.example.com</code> to match all subdomains. Useful for JavaScript-rendered (SPA) pages that load content asynchronously.',
+			'url_rules_host' => 'Host Pattern',
+			'url_rules_wait' => 'Wait (sec)',
+			'url_rules_wait_until' => 'Wait Until',
+			'url_rules_add' => 'Add Rule',
+			'url_rules_remove' => 'Remove',
+
 			'status' => 'Status & Actions',
 			'obscura_status' => 'Obscura binary',
 			'obscura_not_downloaded' => 'Not downloaded',

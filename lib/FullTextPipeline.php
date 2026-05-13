@@ -22,6 +22,9 @@ final class FullTextPipeline {
 	/** @var callable[] */
 	private array $markdownHooks = [];
 
+	/** @var array<int,array{host:string,wait?:int,wait_until?:string}> */
+	private array $fetchRules = [];
+
 	public function __construct(
 		BinaryResolver $binaryResolver,
 		DefuddleManager $defuddleManager,
@@ -34,6 +37,13 @@ final class FullTextPipeline {
 		$this->nodeBinary = $nodeBinary !== '' ? $nodeBinary : 'node';
 		$this->fetchTimeoutSec = max(5, $fetchTimeoutSec);
 		$this->obscuraBinaryOverride = $obscuraBinaryOverride;
+	}
+
+	/**
+	 * @param array<int,array{host:string,wait?:int,wait_until?:string}> $rules
+	 */
+	public function setFetchRules(array $rules): void {
+		$this->fetchRules = $rules;
 	}
 
 	/**
@@ -62,7 +72,7 @@ final class FullTextPipeline {
 
 		// Stage 1: fetch HTML with obscura
 		$fetchResult = ProcRunner::run(
-			[$obscuraBin, 'fetch', $url, '--dump', 'html'],
+			array_merge([$obscuraBin, 'fetch', $url, '--dump', 'html'], $this->resolveWaitArgs($url)),
 			'',
 			$this->fetchTimeoutSec
 		);
@@ -100,5 +110,40 @@ final class FullTextPipeline {
 		$parsedown = new Parsedown();
 		$parsedown->setSafeMode(true);
 		return $parsedown->text($markdown);
+	}
+
+	/**
+	 * Returns extra CLI args for obscura fetch based on the first matching rule.
+	 *
+	 * @return string[]
+	 */
+	private function resolveWaitArgs(string $url): array {
+		$host = (string) (parse_url($url, PHP_URL_HOST) ?: '');
+		foreach ($this->fetchRules as $rule) {
+			$pattern = trim((string) ($rule['host'] ?? ''));
+			if ($pattern === '' || !$this->hostMatches($host, $pattern)) {
+				continue;
+			}
+			$args = [];
+			if (isset($rule['wait']) && (int) $rule['wait'] > 0) {
+				$args[] = '--wait';
+				$args[] = (string) (int) $rule['wait'];
+			}
+			$waitUntil = trim((string) ($rule['wait_until'] ?? ''));
+			if ($waitUntil !== '') {
+				$args[] = '--wait-until';
+				$args[] = $waitUntil;
+			}
+			return $args;
+		}
+		return [];
+	}
+
+	private function hostMatches(string $host, string $pattern): bool {
+		if (str_starts_with($pattern, '*.')) {
+			$suffix = substr($pattern, 2);
+			return $host === $suffix || str_ends_with($host, '.' . $suffix);
+		}
+		return $host === $pattern;
 	}
 }

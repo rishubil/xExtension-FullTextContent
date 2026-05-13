@@ -17,6 +17,9 @@ $defuddleVersion      = $this->getUserConfigurationString('defuddle_version') ??
 $checkInterval        = $this->getUserConfigurationInt('defuddle_check_interval') ?? 168;
 $fetchTimeout         = $this->getUserConfigurationInt('fetch_timeout') ?? 30;
 
+$urlRulesJson = $this->getUserConfigurationString('obscura_url_rules') ?? '[]';
+$urlRules     = json_decode($urlRulesJson, true) ?: [];
+
 $feedDao   = FreshRSS_Factory::createFeedDao();
 $allFeeds  = $feedDao->listFeeds();
 $categories = [];
@@ -86,7 +89,131 @@ ksort($categories);
 			</button>
 		</section>
 
+		<hr />
+
+		<section>
+			<h2><?php echo _t('ext.fulltextcontent.config.url_rules'); ?></h2>
+			<p><?php echo _t('ext.fulltextcontent.config.url_rules_help'); ?></p>
+
+			<table class="table" id="ftc-rules-table">
+				<thead>
+					<tr>
+						<th><?php echo _t('ext.fulltextcontent.config.url_rules_host'); ?></th>
+						<th><?php echo _t('ext.fulltextcontent.config.url_rules_wait'); ?></th>
+						<th><?php echo _t('ext.fulltextcontent.config.url_rules_wait_until'); ?></th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody id="ftc-rules-tbody"></tbody>
+			</table>
+
+			<button type="button" id="ftc-add-rule" class="btn btn-default" style="margin-top: 0.5em;">
+				<?php echo _t('ext.fulltextcontent.config.url_rules_add'); ?>
+			</button>
+
+			<input type="hidden" name="obscura_url_rules" id="obscura_url_rules"
+				value="<?php echo htmlspecialchars($urlRulesJson, ENT_QUOTES); ?>" />
+		</section>
+
 	</form>
+
+	<script>
+	(function () {
+		var WAIT_UNTIL_OPTIONS = ['load', 'domcontentloaded', 'networkidle'];
+		var rules = <?php echo json_encode($urlRules, JSON_UNESCAPED_UNICODE); ?>;
+		var tbody = document.getElementById('ftc-rules-tbody');
+		var hiddenInput = document.getElementById('obscura_url_rules');
+
+		function esc(s) {
+			return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+		}
+
+		function syncHidden() {
+			hiddenInput.value = JSON.stringify(rules);
+		}
+
+		function renderRows() {
+			tbody.innerHTML = '';
+			rules.forEach(function (rule, i) {
+				var tr = document.createElement('tr');
+
+				var hostTd = document.createElement('td');
+				var hostInput = document.createElement('input');
+				hostInput.type = 'text';
+				hostInput.value = rule.host || '';
+				hostInput.placeholder = 'example.com';
+				hostInput.style.width = '100%';
+				hostInput.addEventListener('input', function () {
+					rules[i].host = this.value;
+					syncHidden();
+				});
+				hostTd.appendChild(hostInput);
+
+				var waitTd = document.createElement('td');
+				var waitInput = document.createElement('input');
+				waitInput.type = 'number';
+				waitInput.min = '1';
+				waitInput.value = rule.wait != null ? String(rule.wait) : '';
+				waitInput.placeholder = '5';
+				waitInput.style.width = '5em';
+				waitInput.addEventListener('input', function () {
+					var v = parseInt(this.value, 10);
+					if (v > 0) {
+						rules[i].wait = v;
+					} else {
+						delete rules[i].wait;
+					}
+					syncHidden();
+				});
+				waitTd.appendChild(waitInput);
+
+				var untilTd = document.createElement('td');
+				var untilSelect = document.createElement('select');
+				WAIT_UNTIL_OPTIONS.forEach(function (opt) {
+					var option = document.createElement('option');
+					option.value = opt;
+					option.textContent = opt;
+					if ((rule.wait_until || 'load') === opt) {
+						option.selected = true;
+					}
+					untilSelect.appendChild(option);
+				});
+				untilSelect.addEventListener('change', function () {
+					rules[i].wait_until = this.value;
+					syncHidden();
+				});
+				untilTd.appendChild(untilSelect);
+
+				var removeTd = document.createElement('td');
+				var removeBtn = document.createElement('button');
+				removeBtn.type = 'button';
+				removeBtn.className = 'btn btn-default';
+				removeBtn.textContent = '<?php echo _t('ext.fulltextcontent.config.url_rules_remove'); ?>';
+				removeBtn.addEventListener('click', function () {
+					rules.splice(i, 1);
+					syncHidden();
+					renderRows();
+				});
+				removeTd.appendChild(removeBtn);
+
+				tr.appendChild(hostTd);
+				tr.appendChild(waitTd);
+				tr.appendChild(untilTd);
+				tr.appendChild(removeTd);
+				tbody.appendChild(tr);
+			});
+		}
+
+		document.getElementById('ftc-add-rule').addEventListener('click', function () {
+			rules.push({host: '', wait_until: 'load'});
+			syncHidden();
+			renderRows();
+		});
+
+		renderRows();
+		syncHidden();
+	}());
+	</script>
 
 	<hr />
 
