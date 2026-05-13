@@ -30,6 +30,7 @@ ksort($categories);
 <div class="extension-configure">
 
 	<form method="post" action="">
+		<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
 
 		<section>
 			<h2><?php echo _t('ext.fulltextcontent.config.global'); ?></h2>
@@ -120,6 +121,7 @@ ksort($categories);
 		</table>
 
 		<form method="post" action="" style="display:inline-block; margin-right: 0.5em;">
+			<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
 			<input type="hidden" name="fulltextcontent_action" value="update_defuddle" />
 			<button type="submit" class="btn btn-default">
 				<?php echo _t('ext.fulltextcontent.config.update_defuddle'); ?>
@@ -127,6 +129,7 @@ ksort($categories);
 		</form>
 
 		<form method="post" action="" style="display:inline-block;">
+			<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
 			<input type="hidden" name="fulltextcontent_action" value="redownload_obscura" />
 			<button type="submit" class="btn btn-default">
 				<?php echo _t('ext.fulltextcontent.config.redownload_obscura'); ?>
@@ -141,6 +144,7 @@ ksort($categories);
 		<p><?php echo _t('ext.fulltextcontent.config.per_feed_help'); ?></p>
 
 		<form method="post" action="">
+			<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
 
 			<?php if (empty($categories)): ?>
 				<p><?php echo _t('ext.fulltextcontent.config.no_feeds'); ?></p>
