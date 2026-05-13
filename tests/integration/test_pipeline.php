@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 /**
  * Pipeline integration test — uses the REAL obscura binary and the REAL
- * defuddle npm package (no mocks). Both are pre-fetched on the host and
- * mounted into the container at /cache.
+ * defuddle npm package (no mocks). Both are baked into the test image at
+ * /opt/test-deps (or the path given by the TEST_DEPS_DIR env var).
  *
  * The fixture HTML is loaded via a file:// URL so the container does not
  * require network access. obscura supports file:// out of the box.
@@ -12,7 +12,7 @@ declare(strict_types=1);
 
 $EXT       = '/var/www/FreshRSS/extensions/xExtension-FullTextContent';
 $FIXTURES  = $EXT . '/tests/integration/fixtures';
-$CACHE_DIR = '/cache';
+$CACHE_DIR = getenv('TEST_DEPS_DIR') ?: '/opt/test-deps';
 
 require_once $EXT . '/lib/ProcRunner.php';
 require_once $EXT . '/lib/BinaryResolver.php';

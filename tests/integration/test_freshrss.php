@@ -6,8 +6,8 @@ declare(strict_types=1);
  *
  * Bootstraps FreshRSS, verifies the extension is discovered, loaded, and
  * its hook is registered, then exercises onEntryBeforeInsert end-to-end
- * with the REAL obscura binary and REAL defuddle npm package mounted at
- * /cache (no mocks).
+ * with the REAL obscura binary and REAL defuddle npm package baked into
+ * the test image (no mocks).
  */
 
 if (php_sapi_name() !== 'cli') {
@@ -16,7 +16,7 @@ if (php_sapi_name() !== 'cli') {
 
 $EXT       = '/var/www/FreshRSS/extensions/xExtension-FullTextContent';
 $FIXTURES  = $EXT . '/tests/integration/fixtures';
-$CACHE_DIR = '/cache';
+$CACHE_DIR = getenv('TEST_DEPS_DIR') ?: '/opt/test-deps';
 
 $pinnedDefuddleVersion = getenv('DEFUDDLE_PINNED_VERSION') ?: '';
 if ($pinnedDefuddleVersion === '') {
