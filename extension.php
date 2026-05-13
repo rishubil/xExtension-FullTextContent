@@ -85,20 +85,25 @@ final class FullTextContentExtension extends Minz_Extension {
 			$feedDao->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
 		}
 
-		Minz_Request::good(_t('ext.fulltextcontent.alert.saved'));
+		Minz_Request::good(_t('ext.fulltextcontent.alert.saved'), $this->configureUrl());
 	}
 
 	// -------------------------------------------------------------------------
 	// Helpers
 	// -------------------------------------------------------------------------
 
+	/** @return array{c:string,a:string,params:array<string,string>} */
+	private function configureUrl(): array {
+		return ['c' => 'extension', 'a' => 'configure', 'params' => ['e' => $this->getName()]];
+	}
+
 	private function actionRedownloadObscura(): void {
 		try {
 			$resolver = $this->buildBinaryResolver();
 			$resolver->ensure(true);
-			Minz_Request::good(_t('ext.fulltextcontent.alert.obscura_redownloaded'));
+			Minz_Request::good(_t('ext.fulltextcontent.alert.obscura_redownloaded'), $this->configureUrl());
 		} catch (Throwable $e) {
-			Minz_Request::bad(_t('ext.fulltextcontent.alert.error_obscura') . $e->getMessage());
+			Minz_Request::bad(_t('ext.fulltextcontent.alert.error_obscura') . $e->getMessage(), $this->configureUrl());
 		}
 	}
 
@@ -106,9 +111,9 @@ final class FullTextContentExtension extends Minz_Extension {
 		try {
 			$manager = $this->buildDefuddleManager();
 			$manager->ensureInstalled(true);
-			Minz_Request::good(_t('ext.fulltextcontent.alert.defuddle_updated'));
+			Minz_Request::good(_t('ext.fulltextcontent.alert.defuddle_updated'), $this->configureUrl());
 		} catch (Throwable $e) {
-			Minz_Request::bad(_t('ext.fulltextcontent.alert.error_defuddle') . $e->getMessage());
+			Minz_Request::bad(_t('ext.fulltextcontent.alert.error_defuddle') . $e->getMessage(), $this->configureUrl());
 		}
 	}
 
