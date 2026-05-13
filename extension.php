@@ -47,7 +47,7 @@ final class FullTextContentExtension extends Minz_Extension {
 
 		$entry->_content(
 			'<div class="ftc-refetch">'
-			. '<a class="btn" href="' . htmlspecialchars($url, ENT_QUOTES) . '">'
+			. '<a class="btn" href="' . $url . '">'
 			. _t('ext.fulltextcontent.ui.refetch_button')
 			. '</a>'
 			. '<span class="ftc-status hidden"></span>'

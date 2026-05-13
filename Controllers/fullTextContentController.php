@@ -14,7 +14,7 @@ final class FreshExtension_fullTextContent_Controller extends Minz_ActionControl
 	}
 
 	public function refetchAction(): void {
-		$this->view->_layout(false);
+		$this->view->_layout(null);
 
 		if (!Minz_Request::isPost()) {
 			$this->sendJson(['status' => 405, 'error' => 'POST required']);
