@@ -4,5 +4,6 @@
 	"description": "Replace each entry's body with cleaned full-text content fetched from the source URL.",
 	"version": "0.2.0",
 	"entrypoint": "FullTextContent",
-	"type": "user"
+	"type": "user",
+	"freshrss_min_version": "1.29.0"
 }

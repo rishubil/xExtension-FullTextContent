@@ -19,7 +19,7 @@ This runs at feed refresh time (`EntryBeforeInsert`), so extracted content is pe
 
 ## Requirements
 
-- **FreshRSS** (self-hosted).
+- **FreshRSS 1.29.0+** (self-hosted).
 - **Linux x86_64** host (for the obscura binary; aarch64-linux builds are not available upstream yet).
 - **Node.js + npm** — required to run defuddle. See [Docker setup](#docker-setup) below.
 
