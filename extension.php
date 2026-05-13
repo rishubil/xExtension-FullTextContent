@@ -71,7 +71,14 @@ final class FullTextContentExtension extends Minz_Extension {
 
 		try {
 			$pipeline = $this->buildPipeline();
-			$html = $pipeline->run($url, $this->feedWait($feed), $this->feedWaitUntil($feed));
+			$html = $pipeline->run(
+				$url,
+				$this->feedWait($feed),
+				$this->feedWaitUntil($feed),
+				$this->feedSelector($feed),
+				$this->feedStealth($feed),
+				$this->feedTimeout($feed)
+			);
 			if ($html !== '') {
 				$entry->_content($html);
 			}
@@ -110,14 +117,18 @@ final class FullTextContentExtension extends Minz_Extension {
 		$this->setUserConfigurationValue('defuddle_check_interval', (int) Minz_Request::paramString('defuddle_check_interval'));
 		$this->setUserConfigurationValue('fetch_timeout', (int) Minz_Request::paramString('fetch_timeout'));
 
-		// Save per-feed toggles and wait settings
-		$enabledFeeds  = Minz_Request::paramArray('fulltextcontent_feeds') ?: [];
-		$waitValues    = Minz_Request::paramArray('fulltextcontent_wait') ?: [];
+		// Save per-feed settings
+		$enabledFeeds    = Minz_Request::paramArray('fulltextcontent_feeds') ?: [];
+		$waitValues      = Minz_Request::paramArray('fulltextcontent_wait') ?: [];
 		$waitUntilValues = Minz_Request::paramArray('fulltextcontent_wait_until') ?: [];
+		$selectorValues  = Minz_Request::paramArray('fulltextcontent_selector') ?: [];
+		$stealthFeeds    = Minz_Request::paramArray('fulltextcontent_stealth') ?: [];
+		$timeoutValues   = Minz_Request::paramArray('fulltextcontent_timeout') ?: [];
 
 		$feedDao = FreshRSS_Factory::createFeedDao();
 		foreach ($feedDao->listFeeds() as $feed) {
 			$id = (string) $feed->id();
+
 			$feed->_attribute('fulltextcontent_enabled', in_array($id, $enabledFeeds, true));
 
 			$wait = isset($waitValues[$id]) ? (int) $waitValues[$id] : 0;
@@ -125,6 +136,14 @@ final class FullTextContentExtension extends Minz_Extension {
 
 			$waitUntil = isset($waitUntilValues[$id]) ? trim($waitUntilValues[$id]) : '';
 			$feed->_attribute('fulltextcontent_wait_until', $waitUntil !== '' ? $waitUntil : null);
+
+			$selector = isset($selectorValues[$id]) ? trim($selectorValues[$id]) : '';
+			$feed->_attribute('fulltextcontent_selector', $selector !== '' ? $selector : null);
+
+			$feed->_attribute('fulltextcontent_stealth', in_array($id, $stealthFeeds, true) ?: null);
+
+			$timeout = isset($timeoutValues[$id]) ? (int) $timeoutValues[$id] : 0;
+			$feed->_attribute('fulltextcontent_timeout', $timeout > 0 ? $timeout : null);
 
 			$feedDao->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
 		}
@@ -187,5 +206,17 @@ final class FullTextContentExtension extends Minz_Extension {
 
 	public function feedWaitUntil(FreshRSS_Feed $feed): string {
 		return (string) ($feed->attributeString('fulltextcontent_wait_until') ?? '');
+	}
+
+	public function feedSelector(FreshRSS_Feed $feed): string {
+		return (string) ($feed->attributeString('fulltextcontent_selector') ?? '');
+	}
+
+	public function feedStealth(FreshRSS_Feed $feed): bool {
+		return (bool) ($feed->attributeBoolean('fulltextcontent_stealth') ?? false);
+	}
+
+	public function feedTimeout(FreshRSS_Feed $feed): int {
+		return (int) ($feed->attributeInt('fulltextcontent_timeout') ?? 0);
 	}
 }

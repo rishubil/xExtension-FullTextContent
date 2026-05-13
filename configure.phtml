@@ -25,6 +25,8 @@ foreach ($allFeeds as $feed) {
 	$categories[$catName][] = $feed;
 }
 ksort($categories);
+
+$waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 ?>
 
 <div class="extension-configure">
@@ -155,10 +157,13 @@ ksort($categories);
 						<table class="table">
 							<thead>
 								<tr>
-									<th><?php echo _t('ext.fulltextcontent.config.per_feed_col_feed'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.per_feed_col_enabled'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.per_feed_col_wait'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.per_feed_col_wait_until'); ?></th>
+									<th><?php echo _t('ext.fulltextcontent.config.col_feed'); ?></th>
+									<th><?php echo _t('ext.fulltextcontent.config.col_enabled'); ?></th>
+									<th><?php echo _t('ext.fulltextcontent.config.col_wait'); ?></th>
+									<th><?php echo _t('ext.fulltextcontent.config.col_wait_until'); ?></th>
+									<th><?php echo _t('ext.fulltextcontent.config.col_selector'); ?></th>
+									<th><?php echo _t('ext.fulltextcontent.config.col_stealth'); ?></th>
+									<th><?php echo _t('ext.fulltextcontent.config.col_timeout'); ?></th>
 								</tr>
 							</thead>
 							<tbody>
@@ -168,6 +173,9 @@ ksort($categories);
 										$enabled   = $feed->attributeBoolean('fulltextcontent_enabled');
 										$wait      = (int) ($feed->attributeInt('fulltextcontent_wait') ?? 0);
 										$waitUntil = (string) ($feed->attributeString('fulltextcontent_wait_until') ?? '');
+										$selector  = (string) ($feed->attributeString('fulltextcontent_selector') ?? '');
+										$stealth   = (bool) ($feed->attributeBoolean('fulltextcontent_stealth') ?? false);
+										$timeout   = (int) ($feed->attributeInt('fulltextcontent_timeout') ?? 0);
 									?>
 									<tr>
 										<td>
@@ -175,8 +183,8 @@ ksort($categories);
 												<?php echo htmlspecialchars($feed->name(), ENT_QUOTES); ?>
 											</label>
 										</td>
-										<td>
-											<input class="form-check-input" type="checkbox"
+										<td style="text-align:center;">
+											<input type="checkbox"
 												name="fulltextcontent_feeds[]"
 												id="feed_<?php echo $fid; ?>"
 												value="<?php echo $fid; ?>"
@@ -187,19 +195,37 @@ ksort($categories);
 												name="fulltextcontent_wait[<?php echo $fid; ?>]"
 												value="<?php echo $wait > 0 ? $wait : ''; ?>"
 												min="1" placeholder="—"
-												style="width: 5em;" />
+												style="width:4em;" />
 										</td>
 										<td>
 											<select name="fulltextcontent_wait_until[<?php echo $fid; ?>]">
-												<option value="" <?php echo $waitUntil === '' ? 'selected' : ''; ?>>
-													— (<?php echo _t('ext.fulltextcontent.config.per_feed_wait_until_default'); ?>)
-												</option>
-												<?php foreach (['load', 'domcontentloaded', 'networkidle'] as $opt): ?>
+												<option value="">— (load)</option>
+												<?php foreach ($waitUntilOptions as $opt): ?>
 													<option value="<?php echo $opt; ?>" <?php echo $waitUntil === $opt ? 'selected' : ''; ?>>
 														<?php echo $opt; ?>
 													</option>
 												<?php endforeach; ?>
 											</select>
+										</td>
+										<td>
+											<input type="text"
+												name="fulltextcontent_selector[<?php echo $fid; ?>]"
+												value="<?php echo htmlspecialchars($selector, ENT_QUOTES); ?>"
+												placeholder="—"
+												style="width:10em;" />
+										</td>
+										<td style="text-align:center;">
+											<input type="checkbox"
+												name="fulltextcontent_stealth[]"
+												value="<?php echo $fid; ?>"
+												<?php echo $stealth ? 'checked' : ''; ?> />
+										</td>
+										<td>
+											<input type="number"
+												name="fulltextcontent_timeout[<?php echo $fid; ?>]"
+												value="<?php echo $timeout > 0 ? $timeout : ''; ?>"
+												min="1" placeholder="—"
+												style="width:4em;" />
 										</td>
 									</tr>
 								<?php endforeach; ?>

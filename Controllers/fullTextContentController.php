@@ -43,11 +43,15 @@ final class FreshExtension_fullTextContent_Controller extends Minz_ActionControl
 			}
 
 			$feed = $entry->feed();
-			$wait      = $feed !== null ? $ext->feedWait($feed) : 0;
-			$waitUntil = $feed !== null ? $ext->feedWaitUntil($feed) : '';
-
 			$pipeline = $ext->buildPipeline();
-			$html = $pipeline->run($url, $wait, $waitUntil);
+			$html = $pipeline->run(
+				$url,
+				$feed !== null ? $ext->feedWait($feed) : 0,
+				$feed !== null ? $ext->feedWaitUntil($feed) : '',
+				$feed !== null ? $ext->feedSelector($feed) : '',
+				$feed !== null ? $ext->feedStealth($feed) : false,
+				$feed !== null ? $ext->feedTimeout($feed) : 0
+			);
 
 			if ($html === '') {
 				echo json_encode(['status' => 500, 'error' => 'Failed to fetch content']);
