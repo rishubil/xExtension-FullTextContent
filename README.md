@@ -80,6 +80,49 @@ Open **Administration → Extensions → Full Text Content → Configure**.
 
 Full-text fetching is disabled by default for all feeds. Toggle it per feed in the extension's configuration page.
 
+## Testing
+
+### Unit tests
+
+Runs standalone (no FreshRSS or Docker required). PHP 8.1+ is the only dependency.
+
+```bash
+php scripts/test.php
+```
+
+### Integration tests
+
+Runs inside a real `freshrss/freshrss:latest` Docker container: installs FreshRSS via its CLI, then executes two test suites — one for the extraction pipeline and one for the full FreshRSS extension lifecycle.
+
+**Requirements:** Docker with a running daemon.
+
+```bash
+# Default socket path
+bash scripts/run-integration-tests.sh
+
+# Custom socket (e.g. rootless Docker or a sandboxed environment)
+DOCKER_HOST=unix:///tmp/docker.sock bash scripts/run-integration-tests.sh
+```
+
+The script starts a temporary container, runs all tests, prints a per-test pass/fail report, and removes the container and volumes on exit. The exit code is 0 on success and non-zero on failure.
+
+#### Node.js in the container
+
+The FreshRSS image does not include Node.js. The test runner calls `scripts/install-node.sh`, which installs it via the container's package manager if it is not already on `PATH`. If the container has no internet access (e.g. a sandboxed CI environment), mount a pre-installed Node.js directory and expose it via `PATH` before running:
+
+```bash
+# Example: host has Node.js at /opt/node22
+DOCKER_HOST=unix:///tmp/docker.sock \
+docker compose \
+  -f tests/integration/docker-compose.test.yml \
+  run --rm \
+  -e PATH="/opt/node22/bin:$PATH" \
+  -v /opt/node22:/opt/node22:ro \
+  tests
+```
+
+The provided `tests/integration/docker-compose.test.yml` already includes a bind-mount for `/opt/node22` as a convenience for this scenario.
+
 ## Data files
 
 Runtime files are stored under `<DATA_PATH>/fulltextcontent/`:
