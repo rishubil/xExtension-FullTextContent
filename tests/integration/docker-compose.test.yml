@@ -21,6 +21,14 @@ services:
         source: /opt/node22
         target: /opt/node22
         read_only: true
+      # Pre-populated cache containing the *real* obscura binary and the
+      # *real* defuddle npm package (pre-fetched on the host by
+      # scripts/run-integration-tests.sh). The container has no internet
+      # access; everything required at runtime lives here.
+      - type: bind
+        source: ./.cache
+        target: /cache
+        read_only: true
       - freshrss_data:/var/www/FreshRSS/data
 
 volumes:

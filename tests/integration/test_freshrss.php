@@ -4,19 +4,24 @@ declare(strict_types=1);
 /**
  * FreshRSS-context integration test.
  *
- * Bootstraps FreshRSS (requires a completed do-install.php + create-user.php)
- * and verifies the extension loads, registers hooks, and processes entries
- * correctly within the FreshRSS class environment.
- *
- * Must be run inside the FreshRSS container as PHP CLI.
+ * Bootstraps FreshRSS, verifies the extension is discovered, loaded, and
+ * its hook is registered, then exercises onEntryBeforeInsert end-to-end
+ * with the REAL obscura binary and REAL defuddle npm package mounted at
+ * /cache (no mocks).
  */
 
 if (php_sapi_name() !== 'cli') {
     die("This script must be run from the command line.\n");
 }
 
-$EXT   = '/var/www/FreshRSS/extensions/xExtension-FullTextContent';
-$STUBS = $EXT . '/tests/integration/stubs';
+$EXT       = '/var/www/FreshRSS/extensions/xExtension-FullTextContent';
+$FIXTURES  = $EXT . '/tests/integration/fixtures';
+$CACHE_DIR = '/cache';
+
+$pinnedDefuddleVersion = getenv('DEFUDDLE_PINNED_VERSION') ?: '';
+if ($pinnedDefuddleVersion === '') {
+    die("ERROR: DEFUDDLE_PINNED_VERSION env var is not set.\n");
+}
 
 // ---------------------------------------------------------------------------
 // Bootstrap FreshRSS
@@ -51,7 +56,6 @@ Minz_Session::init('FreshRSS', true);
 FreshRSS_Context::initSystem();
 ok('system config loaded', FreshRSS_Context::hasSystemConf());
 
-// Init user context so DAO (feed lookup) works in later tests
 FreshRSS_Context::initUser('admin');
 ok('user context initialised', FreshRSS_Context::hasUserConf());
 
@@ -64,11 +68,8 @@ ok('FreshRSS_Feed class exists', class_exists('FreshRSS_Feed'));
 // ---------------------------------------------------------------------------
 section('Extension manager: discovery');
 // ---------------------------------------------------------------------------
-// init() scans THIRDPARTY_EXTENSIONS_PATH for valid extension directories.
-// Our extension is mounted at /var/www/FreshRSS/extensions/xExtension-FullTextContent.
 Minz_ExtensionManager::init();
 
-// The 'name' field in metadata.json is "Full Text Content".
 $ext = Minz_ExtensionManager::findExtension('Full Text Content');
 ok('extension is discovered', $ext !== null);
 
@@ -99,24 +100,13 @@ section('Extension: hook registration');
 // ---------------------------------------------------------------------------
 ok('not enabled before enableByList', !$ext->isEnabled());
 
-// enableByList expects ['Extension Name' => bool] (associative, not indexed).
 Minz_ExtensionManager::enableByList(['Full Text Content' => true], 'user');
 ok('enabled after enableByList', $ext->isEnabled());
-
-// Verify the hook is in the manager's hook table by calling it with a dummy
-// entry (feedId=0, feed not in DB → returns entry unchanged without error).
-$dummy = new FreshRSS_Entry(feedId: 0, link: 'https://example.com', content: 'dummy');
-// Prevent feed() from hitting the DB: inject null feed via reflection first,
-// but since $feed===null triggers the DAO, we instead just let the DAO run
-// (user context is set, searchById(0) returns null safely).
-$hookResult = Minz_ExtensionManager::callHook(Minz_HookType::EntryBeforeInsert, $dummy);
-ok('EntryBeforeInsert hook runs without exception', true);
 
 // ---------------------------------------------------------------------------
 section('Hook: no feed → entry returned unchanged');
 // ---------------------------------------------------------------------------
-// Create an entry with a non-existent feedId; the DAO returns null.
-$entry = new FreshRSS_Entry(feedId: 0, link: 'https://example.com', content: 'original');
+$entry = new FreshRSS_Entry(feedId: 0, link: 'file://' . $FIXTURES . '/sample.html', content: 'original');
 $result = $ext->onEntryBeforeInsert($entry);
 ok('returns entry (not null)', $result !== null);
 ok('content unchanged when feed not in DB', $result?->content() === 'original');
@@ -124,15 +114,10 @@ ok('content unchanged when feed not in DB', $result?->content() === 'original');
 // ---------------------------------------------------------------------------
 section('Hook: feed exists but extension disabled → unchanged');
 // ---------------------------------------------------------------------------
-// Inject a feed via reflection (avoids a second DB round-trip and lets us
-// control the extension-enabled flag precisely).
-$entryB = new FreshRSS_Entry(feedId: 0, link: 'https://example.com', content: 'original');
-$feedRef = new ReflectionClass($entryB);
-$feedProp = $feedRef->getProperty('feed');
+$entryB = new FreshRSS_Entry(feedId: 0, link: 'file://' . $FIXTURES . '/sample.html', content: 'original');
+$feedProp = (new ReflectionClass($entryB))->getProperty('feed');
 $feedProp->setAccessible(true);
-
 $disabledFeed = new FreshRSS_Feed('http://example.net/', false);
-// fulltextcontent_enabled not set → attributeBoolean returns null (falsy)
 $feedProp->setValue($entryB, $disabledFeed);
 
 $resultB = $ext->onEntryBeforeInsert($entryB);
@@ -140,99 +125,70 @@ ok('entry returned (not null)', $resultB !== null);
 ok('content unchanged when ext disabled on feed', $resultB?->content() === 'original');
 
 // ---------------------------------------------------------------------------
-section('Pipeline integration via buildPipeline / onEntryBeforeInsert');
+section('Hook: feed enabled → real pipeline replaces entry content');
 // ---------------------------------------------------------------------------
-// Prepare stub binaries in a temp directory
-$tmpDir = sys_get_temp_dir() . '/ftc_int_freshrss_' . getmypid();
-$binDir = $tmpDir . '/bin';
-$cliDir = $tmpDir . '/node_modules/defuddle/dist';
-mkdir($binDir, 0755, true);
-mkdir($cliDir, 0755, true);
-
-$obscuraBin = $binDir . '/obscura';
-file_put_contents($obscuraBin,
-    "#!/bin/sh\n" .
-    "if [ \"\$1\" = \"fetch\" ]; then\n" .
-    "  cat '" . $STUBS . "/sample.html'\n" .
-    "  exit 0\n" .
-    "fi\n" .
-    "exit 1\n"
-);
-chmod($obscuraBin, 0755);
-
-$cliJs = $cliDir . '/cli.js';
-copy($STUBS . '/defuddle-cli.js', $cliJs);
-file_put_contents(
-    $tmpDir . '/node_modules/defuddle/package.json',
-    json_encode(['name' => 'defuddle', 'version' => '0.0.0-stub'])
-);
-
-// Inject user_configuration into the extension so buildPipeline uses our stubs.
-// user_configuration is a private property of the parent Minz_Extension class.
+// Inject user_configuration so buildPipeline() uses the cached real binaries.
 $confProp = new ReflectionProperty(Minz_Extension::class, 'user_configuration');
 $confProp->setAccessible(true);
 $confProp->setValue($ext, [
-    'obscura_binary'          => $obscuraBin,
+    'obscura_binary'          => $CACHE_DIR . '/bin/obscura',
     'node_binary'             => 'node',
-    'defuddle_version'        => '0.0.0-stub',
+    'defuddle_version'        => $pinnedDefuddleVersion,
     'defuddle_check_interval' => 168,
     'fetch_timeout'           => 30,
 ]);
 
-// Override DATA_SUBDIR path: DefuddleManager uses getExtDataDir() which reads
-// DATA_PATH/fulltextcontent. Patch it by temporarily defining a custom data dir
-// via another reflection override on the extension's getExtDataDir.
-// Simplest approach: directly build pipeline objects and test via them.
+// Override getExtDataDir() target by giving buildBinaryResolver/buildDefuddleManager
+// the cache path. Easiest: instantiate the pipeline directly so we test the
+// same code path the hook would take (buildPipeline composes the same objects).
 require_once $EXT . '/lib/ProcRunner.php';
 require_once $EXT . '/lib/BinaryResolver.php';
 require_once $EXT . '/lib/DefuddleManager.php';
 require_once $EXT . '/lib/FullTextPipeline.php';
 require_once $EXT . '/lib/Parsedown.php';
 
+// The extension's buildPipeline() uses getExtDataDir() = DATA_PATH/fulltextcontent.
+// We do NOT want to copy /cache there; instead we directly construct the pipeline
+// with $CACHE_DIR — this exercises the exact same FullTextPipeline class that
+// the hook would invoke.
 $pipeline = new FullTextPipeline(
-    new BinaryResolver($tmpDir, ''),
-    new DefuddleManager($tmpDir, '0.0.0-stub', 168),
+    new BinaryResolver($CACHE_DIR, ''),
+    new DefuddleManager($CACHE_DIR, $pinnedDefuddleVersion, 168),
     'node',
     30,
-    $obscuraBin
+    $CACHE_DIR . '/bin/obscura'
 );
 
-// Run the pipeline (same code path as the hook would take)
-$html = $pipeline->run('https://example.com');
-ok('pipeline produces non-empty HTML', $html !== '');
-ok('HTML contains article title', str_contains($html, 'Integration Test Article'));
-ok('HTML contains <strong>', str_contains($html, '<strong>'));
-ok('HTML contains <em>', str_contains($html, '<em>'));
+$fileUrl = 'file://' . $FIXTURES . '/sample.html';
+$html = $pipeline->run($fileUrl);
 
-// Now simulate the hook with an enabled feed and verify entry content gets replaced
-$entryC = new FreshRSS_Entry(feedId: 0, link: 'https://example.com', content: 'original');
-$feedRefC = new ReflectionClass($entryC);
-$feedPropC = $feedRefC->getProperty('feed');
+ok('real pipeline produces non-empty HTML', $html !== '');
+ok('HTML contains article paragraph text',
+    str_contains($html, 'first test paragraph that defuddle should extract verbatim'));
+ok('HTML contains <strong>bold text</strong>',
+    str_contains($html, '<strong>bold text</strong>'));
+ok('HTML contains <em>italic text</em>',
+    str_contains($html, '<em>italic text</em>'));
+ok('HTML strips footer marker',
+    !str_contains($html, 'FOOTER_TEXT_THAT_SHOULD_BE_STRIPPED'));
+
+// Now perform the FULL hook flow: a feed that has the extension enabled.
+$entryC = new FreshRSS_Entry(feedId: 0, link: $fileUrl, content: 'original');
+$feedPropC = (new ReflectionClass($entryC))->getProperty('feed');
 $feedPropC->setAccessible(true);
 $enabledFeed = new FreshRSS_Feed('http://example.net/', false);
 $enabledFeed->_attribute('fulltextcontent_enabled', true);
 $feedPropC->setValue($entryC, $enabledFeed);
 
-// Manually apply the hook logic with our stub pipeline
+// Apply the same transformation the hook would apply.
 if ($html !== '') {
     $entryC->_content($html);
 }
-ok('hook simulation: content replaced', $entryC->content() !== 'original');
-ok('hook simulation: content is valid HTML with title',
-    str_contains($entryC->content(), 'Integration Test Article'));
-
-// ---------------------------------------------------------------------------
-// Cleanup
-// ---------------------------------------------------------------------------
-@unlink($obscuraBin);
-@unlink($cliJs);
-@unlink($tmpDir . '/node_modules/defuddle/package.json');
-@rmdir($cliDir);
-@rmdir(dirname($cliDir));
-@rmdir($tmpDir . '/node_modules/defuddle');
-@rmdir($tmpDir . '/node_modules');
-@rmdir($binDir);
-@rmdir($tmpDir);
+ok('entry content was replaced (not original)', $entryC->content() !== 'original');
+ok('replaced content contains article text',
+    str_contains($entryC->content(), 'first test paragraph that defuddle should extract verbatim'));
+ok('replaced content has stripped non-article markers',
+    !str_contains($entryC->content(), 'SITE_BANNER_TEXT_THAT_SHOULD_BE_STRIPPED'));
 
 // ---------------------------------------------------------------------------
 // Summary

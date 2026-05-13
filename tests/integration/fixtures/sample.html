@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Integration Test Article</title>
+  <meta name="author" content="Test Author">
+  <meta name="description" content="Fixture article used by the integration test suite.">
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="/">Home</a> | <a href="/about">About</a> | <a href="/contact">Contact</a>
+    </nav>
+    <div class="site-banner">SITE_BANNER_TEXT_THAT_SHOULD_BE_STRIPPED</div>
+  </header>
+  <aside class="sidebar">
+    <h3>Related Articles</h3>
+    <ul>
+      <li><a href="/a">SIDEBAR_LINK_1</a></li>
+      <li><a href="/b">SIDEBAR_LINK_2</a></li>
+    </ul>
+  </aside>
+  <main>
+    <article>
+      <h1>Integration Test Article</h1>
+      <p class="byline">By Test Author</p>
+      <p>This is the first test paragraph that defuddle should extract verbatim.</p>
+      <p>This is the second paragraph with <strong>bold text</strong> and <em>italic text</em> for inline formatting checks.</p>
+      <p>The third paragraph contains a <a href="https://example.org/ref">reference link</a> that should be preserved.</p>
+      <h2>Subheading</h2>
+      <p>Final paragraph under a subheading for structural coverage.</p>
+    </article>
+  </main>
+  <footer>
+    <p>FOOTER_TEXT_THAT_SHOULD_BE_STRIPPED &mdash; &copy; 2026 Example.</p>
+  </footer>
+  <script>console.log("SCRIPT_BLOCK_THAT_SHOULD_BE_STRIPPED");</script>
+</body>
+</html>

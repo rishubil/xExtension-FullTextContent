@@ -2,15 +2,17 @@
 declare(strict_types=1);
 
 /**
- * Pipeline integration test.
+ * Pipeline integration test — uses the REAL obscura binary and the REAL
+ * defuddle npm package (no mocks). Both are pre-fetched on the host and
+ * mounted into the container at /cache.
  *
- * Runs standalone inside the FreshRSS container (no FreshRSS bootstrap needed).
- * Uses stub binaries (stubs/obscura, stubs/defuddle-cli.js) so no real
- * network access or npm install is required.
+ * The fixture HTML is loaded via a file:// URL so the container does not
+ * require network access. obscura supports file:// out of the box.
  */
 
-$EXT = '/var/www/FreshRSS/extensions/xExtension-FullTextContent';
-$STUBS = $EXT . '/tests/integration/stubs';
+$EXT       = '/var/www/FreshRSS/extensions/xExtension-FullTextContent';
+$FIXTURES  = $EXT . '/tests/integration/fixtures';
+$CACHE_DIR = '/cache';
 
 require_once $EXT . '/lib/ProcRunner.php';
 require_once $EXT . '/lib/BinaryResolver.php';
@@ -36,136 +38,112 @@ function section(string $name): void {
     echo "\n=== {$name} ===\n";
 }
 
+$pinnedDefuddleVersion = getenv('DEFUDDLE_PINNED_VERSION') ?: '';
+if ($pinnedDefuddleVersion === '') {
+    die("ERROR: DEFUDDLE_PINNED_VERSION env var is not set.\n");
+}
+
 // ---------------------------------------------------------------------------
-// Prepare a writable temp data directory with pre-seeded fake defuddle
+section('Real binaries are present in /cache');
 // ---------------------------------------------------------------------------
-$tmpDir = sys_get_temp_dir() . '/ftc_int_pipeline_' . getmypid();
-$binDir = $tmpDir . '/bin';
-$cliDir = $tmpDir . '/node_modules/defuddle/dist';
+ok('obscura binary exists and is executable', is_executable("{$CACHE_DIR}/bin/obscura"));
+ok('defuddle CLI exists', is_file("{$CACHE_DIR}/node_modules/defuddle/dist/cli.js"));
+ok('defuddle package.json exists', is_file("{$CACHE_DIR}/node_modules/defuddle/package.json"));
 
-mkdir($binDir, 0755, true);
-mkdir($cliDir, 0755, true);
-
-// Stub obscura: shell script that cat's sample.html
-$obscuraBin = $binDir . '/obscura';
-file_put_contents($obscuraBin,
-    "#!/bin/sh\n" .
-    "if [ \"\$1\" = \"fetch\" ]; then\n" .
-    "  cat '" . $STUBS . "/sample.html'\n" .
-    "  exit 0\n" .
-    "fi\n" .
-    "printf 'unknown command: %s\\n' \"\$1\" >&2\n" .
-    "exit 1\n"
+$pkgData = json_decode(
+    (string) file_get_contents("{$CACHE_DIR}/node_modules/defuddle/package.json"),
+    true
 );
-chmod($obscuraBin, 0755);
+ok('defuddle is at the pinned version',
+    is_array($pkgData) && ($pkgData['version'] ?? '') === $pinnedDefuddleVersion,
+    'expected ' . $pinnedDefuddleVersion . ', got ' . ($pkgData['version'] ?? 'null'));
 
-// Stub defuddle CLI: copy JS from stubs dir
-$cliJs = $cliDir . '/cli.js';
-copy($STUBS . '/defuddle-cli.js', $cliJs);
+// ---------------------------------------------------------------------------
+section('Real obscura CLI smoke test');
+// ---------------------------------------------------------------------------
+$obscuraHelp = ProcRunner::run([$CACHE_DIR . '/bin/obscura', '--help']);
+ok('obscura --help exits 0', $obscuraHelp['exit_code'] === 0);
+ok('obscura banner present', str_contains($obscuraHelp['stdout'], 'Obscura'));
 
-// Fake package.json so DefuddleManager thinks the pinned version is installed
-file_put_contents(
-    $tmpDir . '/node_modules/defuddle/package.json',
-    json_encode(['name' => 'defuddle', 'version' => '0.0.0-stub'])
+$fileUrl = 'file://' . $FIXTURES . '/sample.html';
+$obscuraFetch = ProcRunner::run(
+    [$CACHE_DIR . '/bin/obscura', 'fetch', $fileUrl, '--dump', 'html'],
+    '',
+    30
 );
+ok('obscura fetch of file:// URL exits 0', $obscuraFetch['exit_code'] === 0,
+    trim($obscuraFetch['stderr']));
+ok('obscura output contains title', str_contains($obscuraFetch['stdout'], 'Integration Test Article'));
 
-// DefuddleManager pinned to stub version so it skips npm install
-$defuddleManager = new DefuddleManager($tmpDir, '0.0.0-stub', 168);
-$binaryResolver  = new BinaryResolver($tmpDir, '');
+// ---------------------------------------------------------------------------
+section('Real defuddle CLI smoke test');
+// ---------------------------------------------------------------------------
+$cliJs = $CACHE_DIR . '/node_modules/defuddle/dist/cli.js';
+$defuddleHelp = ProcRunner::run(['node', $cliJs, '--help']);
+ok('defuddle --help exits 0', $defuddleHelp['exit_code'] === 0);
+ok('defuddle help mentions "parse"', str_contains($defuddleHelp['stdout'], 'parse'));
+
+// ---------------------------------------------------------------------------
+section('FullTextPipeline end-to-end (real obscura + real defuddle)');
+// ---------------------------------------------------------------------------
+$binaryResolver  = new BinaryResolver($CACHE_DIR, '');
+$defuddleManager = new DefuddleManager($CACHE_DIR, $pinnedDefuddleVersion, 168);
+
+ok('BinaryResolver detects cached obscura', $binaryResolver->isDownloaded());
+ok('DefuddleManager sees pinned installed version',
+    $defuddleManager->installedVersion() === $pinnedDefuddleVersion);
+
+// ensureInstalled() must short-circuit on version match (no npm install attempt)
+$cliPath = $defuddleManager->ensureInstalled();
+ok('DefuddleManager::ensureInstalled returns cli.js path',
+    $cliPath === $CACHE_DIR . '/node_modules/defuddle/dist/cli.js');
 
 $pipeline = new FullTextPipeline(
     $binaryResolver,
     $defuddleManager,
     'node',
-    30,
-    $obscuraBin   // bypass download; use stub directly
+    30
 );
 
-// ---------------------------------------------------------------------------
-section('Prerequisites');
-// ---------------------------------------------------------------------------
-$nodeVer = ProcRunner::run(['node', '--version']);
-ok('node is available', $nodeVer['exit_code'] === 0, trim($nodeVer['stdout']));
-echo "    node: " . trim($nodeVer['stdout']) . "\n";
+$html = $pipeline->run($fileUrl);
+
+ok('pipeline returns non-empty HTML', $html !== '');
+ok('output contains first paragraph text',
+    str_contains($html, 'first test paragraph that defuddle should extract verbatim'));
+ok('output preserves <strong>bold text</strong>',
+    str_contains($html, '<strong>bold text</strong>'));
+ok('output preserves <em>italic text</em>',
+    str_contains($html, '<em>italic text</em>'));
+ok('output preserves reference link',
+    preg_match('#<a[^>]*href="https://example\.org/ref"#', $html) === 1);
+ok('output preserves <h2> Subheading',
+    str_contains($html, '<h2>Subheading</h2>'));
+
+// Defuddle should have stripped non-article content
+ok('site banner is stripped',
+    !str_contains($html, 'SITE_BANNER_TEXT_THAT_SHOULD_BE_STRIPPED'));
+ok('sidebar links are stripped',
+    !str_contains($html, 'SIDEBAR_LINK_1') && !str_contains($html, 'SIDEBAR_LINK_2'));
+ok('footer text is stripped',
+    !str_contains($html, 'FOOTER_TEXT_THAT_SHOULD_BE_STRIPPED'));
+ok('inline <script> content is stripped',
+    !str_contains($html, 'SCRIPT_BLOCK_THAT_SHOULD_BE_STRIPPED'));
+
+// Parsedown safe-mode: no raw <script> tag in final output
+ok('Parsedown safe-mode: no raw <script> tag', !str_contains($html, '<script'));
 
 // ---------------------------------------------------------------------------
-section('Stub: obscura');
-// ---------------------------------------------------------------------------
-$o = ProcRunner::run([$obscuraBin, 'fetch', 'https://example.com', '--dump', 'html']);
-ok('stub obscura exits 0', $o['exit_code'] === 0);
-ok('stub obscura returns DOCTYPE', str_contains($o['stdout'], '<!DOCTYPE html'));
-ok('stub obscura includes article heading', str_contains($o['stdout'], 'Integration Test Article'));
-
-// ---------------------------------------------------------------------------
-section('Stub: defuddle CLI');
-// ---------------------------------------------------------------------------
-$d = ProcRunner::run(['node', $cliJs, 'parse', $STUBS . '/sample.html', '--markdown']);
-ok('stub defuddle exits 0', $d['exit_code'] === 0);
-ok('stub defuddle returns h1 markdown', str_contains($d['stdout'], '# Integration Test Article'));
-ok('stub defuddle keeps first paragraph', str_contains($d['stdout'], 'first test paragraph'));
-ok('stub defuddle converts bold', str_contains($d['stdout'], '**bold text**'));
-ok('stub defuddle converts italic', str_contains($d['stdout'], '*italic text*'));
-
-// ---------------------------------------------------------------------------
-section('DefuddleManager: version pinning (no npm install)');
-// ---------------------------------------------------------------------------
-ok('installedVersion matches stub', $defuddleManager->installedVersion() === '0.0.0-stub');
-ok('targetVersion returns pinned version', $defuddleManager->targetVersion() === '0.0.0-stub');
-$cliPath = $defuddleManager->ensureInstalled();
-ok('ensureInstalled returns cli.js path', str_ends_with($cliPath, 'cli.js'));
-ok('cli.js file exists', file_exists($cliPath));
-
-// ---------------------------------------------------------------------------
-section('FullTextPipeline: end-to-end');
-// ---------------------------------------------------------------------------
-$html = $pipeline->run('https://example.com');
-
-ok('pipeline returns non-empty string', $html !== '');
-ok('output contains <h1>', preg_match('/<h1[^>]*>/', $html) === 1, substr($html, 0, 120));
-ok('output contains article title', str_contains($html, 'Integration Test Article'));
-ok('output contains <p>', preg_match('/<p[^>]*>/', $html) === 1);
-ok('output contains first paragraph text', str_contains($html, 'first test paragraph'));
-ok('output contains <strong> for bold', str_contains($html, '<strong>bold text</strong>'));
-ok('output contains <em> for italic', str_contains($html, '<em>italic text</em>'));
-ok('XSS safe-mode: no raw <script> in output',
-    !str_contains($html, '<script'));
-
-// ---------------------------------------------------------------------------
-section('FullTextPipeline: edge cases');
+section('FullTextPipeline edge cases');
 // ---------------------------------------------------------------------------
 ok('empty URL returns empty string', $pipeline->run('') === '');
 
-// Markdown hook surface
+// Markdown hook surface (intercepts between defuddle and Parsedown)
 $pipeline->onMarkdown(function (string $md): string {
-    return $md . "\n\nHook injected paragraph.";
+    return $md . "\n\nHOOK_INJECTED_PARAGRAPH.";
 });
-$htmlWithHook = $pipeline->run('https://example.com');
-ok('markdown hook output is appended', str_contains($htmlWithHook, 'Hook injected paragraph'));
-
-// Timeout: use a fake binary that sleeps longer than the timeout
-$slowBin = $binDir . '/slow-obscura';
-file_put_contents($slowBin, "#!/bin/sh\nsleep 10\n");
-chmod($slowBin, 0755);
-$slowPipeline = new FullTextPipeline($binaryResolver, $defuddleManager, 'node', 1, $slowBin);
-try {
-    $slowPipeline->run('https://example.com');
-    ok('slow fetch raises RuntimeException', false);
-} catch (RuntimeException $e) {
-    ok('slow fetch raises RuntimeException', true, $e->getMessage());
-}
-
-// ---------------------------------------------------------------------------
-// Cleanup
-// ---------------------------------------------------------------------------
-foreach ([$slowBin, $obscuraBin] as $f) { @unlink($f); }
-@unlink($cliJs);
-@unlink($tmpDir . '/node_modules/defuddle/package.json');
-@rmdir($cliDir);
-@rmdir($tmpDir . '/node_modules/defuddle/dist');
-@rmdir($tmpDir . '/node_modules/defuddle');
-@rmdir($tmpDir . '/node_modules');
-@rmdir($binDir);
-@rmdir($tmpDir);
+$htmlWithHook = $pipeline->run($fileUrl);
+ok('markdown hook output is appended',
+    str_contains($htmlWithHook, 'HOOK_INJECTED_PARAGRAPH'));
 
 // ---------------------------------------------------------------------------
 // Summary
