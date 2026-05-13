@@ -92,9 +92,9 @@ php scripts/test.php
 
 ### Integration tests
 
-Runs the **real** obscura binary and the **real** defuddle npm package (no mocks) inside a `freshrss/freshrss:latest` Docker container. The runner installs FreshRSS via its CLI, then exercises both the extraction pipeline and the FreshRSS extension lifecycle end-to-end.
+Runs the **real** obscura binary and the **real** defuddle npm package (no mocks) inside a custom Docker image built on top of `freshrss/freshrss:latest`. The runner initialises FreshRSS via its CLI, then exercises both the extraction pipeline and the FreshRSS extension lifecycle end-to-end.
 
-**Requirements:** Docker daemon, `curl`, `npm`, and `tar` on the host.
+**Requirements:** Docker daemon only. No host-side `curl`, `npm`, or `tar` needed — all dependencies are installed inside the image at build time.
 
 ```bash
 # Default socket path
@@ -106,20 +106,13 @@ DOCKER_HOST=unix:///tmp/docker.sock bash scripts/run-integration-tests.sh
 
 The script:
 
-1. **Pre-fetches real binaries on the host** into `tests/integration/.cache/` (gitignored):
-   - obscura is downloaded from its GitHub release.
-   - defuddle is `npm install`-ed at a pinned version (`0.18.1`).
-   - Subsequent runs reuse the cache; delete `.cache/` to force a re-fetch.
-2. Starts a temporary container with the cache bind-mounted at `/cache`.
+1. **Builds the test image** (`tests/integration/Dockerfile`) — installs Node.js, downloads obscura, and installs defuddle at the pinned version (`0.18.1`). Docker layer caching makes subsequent runs fast.
+2. Starts a temporary container from the built image.
 3. Initialises FreshRSS via `cli/do-install.php` + `cli/create-user.php`.
 4. Runs both test suites against `file:///…/tests/integration/fixtures/sample.html` (obscura supports `file://` URLs, so no network or local HTTP server is needed inside the container).
 5. Tears the container and volumes down on exit.
 
 The fixture exercises real defuddle behaviour: the suite asserts that article paragraphs, bold/italic, links, and `<h2>` are preserved while site banners, sidebars, footers, and inline `<script>` content are stripped.
-
-#### Node.js in the container
-
-The FreshRSS image does not include Node.js. The test runner falls back to `scripts/install-node.sh` (apt/apk install) when `node` is not on `PATH`. If the container has no internet access (e.g. a sandboxed CI environment), mount a pre-installed Node.js directory and expose it via `PATH` — the provided `tests/integration/docker-compose.test.yml` already does this for `/opt/node22`. Edit the compose file to match your host's Node.js install path.
 
 ## Data files
 

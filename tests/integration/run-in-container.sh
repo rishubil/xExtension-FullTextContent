@@ -1,40 +1,31 @@
 #!/bin/sh
-# Runs inside the FreshRSS Docker container.
-# Real obscura and real defuddle are mounted at /cache (pre-fetched on the host).
+# Runs inside the test Docker container.
+# Real obscura and real defuddle are baked into the image at /opt/test-deps
+# (or the path given by TEST_DEPS_DIR).
 set -eu
 
 EXT=/var/www/FreshRSS/extensions/xExtension-FullTextContent
 FRESHRSS=/var/www/FreshRSS
+TEST_DEPS_DIR="${TEST_DEPS_DIR:-/opt/test-deps}"
 
 # ---------------------------------------------------------------------------
-# 1. Ensure Node.js is available (mounted /opt/node22 in compose; otherwise
-#    fall back to the extension's idempotent installer, which uses apt/apk
-#    if the container has network access).
+# 1. Sanity checks: binaries must be present in the image
 # ---------------------------------------------------------------------------
-if ! command -v node >/dev/null 2>&1; then
-    echo "==> Node.js not on PATH — invoking install-node.sh"
-    sh "${EXT}/scripts/install-node.sh"
-fi
-command -v node >/dev/null 2>&1 || { echo "ERROR: node still missing after install attempt"; exit 1; }
+echo "==> Verifying baked-in binaries..."
+test -x "${TEST_DEPS_DIR}/bin/obscura"              || { echo "ERROR: ${TEST_DEPS_DIR}/bin/obscura missing"; exit 1; }
+test -f "${TEST_DEPS_DIR}/node_modules/defuddle/dist/cli.js" || { echo "ERROR: defuddle missing"; exit 1; }
+test -f "${TEST_DEPS_DIR}/.versions"                || { echo "ERROR: ${TEST_DEPS_DIR}/.versions missing"; exit 1; }
 
-# ---------------------------------------------------------------------------
-# 2. Sanity checks: real binaries are in the cache mount
-# ---------------------------------------------------------------------------
-echo "==> Verifying host-pre-fetched binaries are available..."
-test -x /cache/bin/obscura || { echo "ERROR: /cache/bin/obscura missing"; exit 1; }
-test -f /cache/node_modules/defuddle/dist/cli.js || { echo "ERROR: defuddle missing"; exit 1; }
-test -f /cache/.versions || { echo "ERROR: /cache/.versions missing"; exit 1; }
-
-. /cache/.versions  # exports DEFUDDLE_PINNED_VERSION
+. "${TEST_DEPS_DIR}/.versions"  # exports DEFUDDLE_PINNED_VERSION
 export DEFUDDLE_PINNED_VERSION
 
-echo "    obscura: $(/cache/bin/obscura --help 2>&1 | head -1)"
+echo "    obscura: $("${TEST_DEPS_DIR}/bin/obscura" --help 2>&1 | head -1)"
 echo "    node:    $(node --version)"
 echo "    defuddle pinned to: ${DEFUDDLE_PINNED_VERSION}"
-INSTALLED_DEFUDDLE=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' /cache/node_modules/defuddle/package.json | head -1)
+INSTALLED_DEFUDDLE=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "${TEST_DEPS_DIR}/node_modules/defuddle/package.json" | head -1)
 echo "    defuddle installed: ${INSTALLED_DEFUDDLE}"
 if [ "${INSTALLED_DEFUDDLE}" != "${DEFUDDLE_PINNED_VERSION}" ]; then
-    echo "ERROR: defuddle version mismatch (cache=${INSTALLED_DEFUDDLE}, expected=${DEFUDDLE_PINNED_VERSION})"
+    echo "ERROR: defuddle version mismatch (image=${INSTALLED_DEFUDDLE}, expected=${DEFUDDLE_PINNED_VERSION})"
     exit 1
 fi
 

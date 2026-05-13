@@ -1,3 +1,0 @@
-# Integration test cache: real obscura binary + defuddle npm package,
-# pre-fetched on the host by scripts/run-integration-tests.sh.
-tests/integration/.cache/
