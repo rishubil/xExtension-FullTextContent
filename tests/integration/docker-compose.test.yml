@@ -1,0 +1,27 @@
+services:
+  tests:
+    image: freshrss/freshrss:latest
+    user: root
+    entrypoint: ""
+    command:
+      - sh
+      - /var/www/FreshRSS/extensions/xExtension-FullTextContent/tests/integration/run-in-container.sh
+    environment:
+      DATA_PATH: /var/www/FreshRSS/data
+      # Prepend the mounted Node.js install to PATH so node/npm are available
+      # without requiring network access to apt/apk inside the container.
+      PATH: /opt/node22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    volumes:
+      - type: bind
+        source: ../..
+        target: /var/www/FreshRSS/extensions/xExtension-FullTextContent
+        read_only: true
+      # Mount the host Node.js installation read-only into the container
+      - type: bind
+        source: /opt/node22
+        target: /opt/node22
+        read_only: true
+      - freshrss_data:/var/www/FreshRSS/data
+
+volumes:
+  freshrss_data:
