@@ -144,7 +144,7 @@ final class DefuddleManager {
 		try {
 			$spec = 'defuddle@' . $version;
 			$result = ProcRunner::run(
-				['npm', 'install', $spec, '--prefix', $this->dataDir, '--no-audit', '--no-fund'],
+				['npm', 'install', $spec, '--prefix', $this->dataDir, '--no-audit', '--no-fund', '--cache', $this->dataDir . '/.npm-cache'],
 				'',
 				120
 			);
@@ -175,6 +175,9 @@ final class DefuddleManager {
 
 	/** @param array<string,mixed> $state */
 	private function writeState(array $state): void {
+		if (!is_dir($this->dataDir)) {
+			mkdir($this->dataDir, 0755, true);
+		}
 		$path = $this->dataDir . '/' . self::STATE_FILE;
 		file_put_contents($path, json_encode($state, JSON_PRETTY_PRINT));
 	}
