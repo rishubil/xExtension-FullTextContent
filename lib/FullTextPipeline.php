@@ -126,9 +126,82 @@ final class FullTextPipeline {
 			$markdown = $hook($markdown);
 		}
 
+		// Stage 2.5: resolve relative URLs in Markdown before rendering
+		$markdown = $this->resolveRelativeUrlsInMarkdown($markdown, $url);
+
 		// Stage 3: Markdown → HTML
 		$parsedown = new Parsedown();
 		$parsedown->setSafeMode(true);
 		return $parsedown->text($markdown);
+	}
+
+	/**
+	 * Rewrites relative URLs in defuddle-generated Markdown to absolute URLs
+	 * using $baseUrl as the reference. Handles:
+	 *   - inline links/images:      [text](url)  ![alt](url)
+	 *   - reference definitions:    [ref]: url
+	 */
+	private function resolveRelativeUrlsInMarkdown(string $markdown, string $baseUrl): string {
+		if ($markdown === '' || $baseUrl === '') {
+			return $markdown;
+		}
+
+		$parsed = parse_url($baseUrl);
+		if ($parsed === false || empty($parsed['host'])) {
+			return $markdown;
+		}
+
+		$scheme   = $parsed['scheme'] ?? 'https';
+		$host     = $parsed['host'];
+		$port     = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+		$origin   = $scheme . '://' . $host . $port;
+		$path     = $parsed['path'] ?? '/';
+		$basePath = substr($path, 0, (int) strrpos($path, '/') + 1);
+
+		$resolve = static function (string $rel) use ($origin, $basePath, $scheme): string {
+			if (preg_match('/^[a-z][a-z0-9+\-.]*:/i', $rel)) {
+				return $rel; // already has a scheme (http:, mailto:, data:, …)
+			}
+			if (str_starts_with($rel, '#')) {
+				return $rel; // fragment-only
+			}
+			if (str_starts_with($rel, '//')) {
+				return $scheme . ':' . $rel; // protocol-relative
+			}
+			if (str_starts_with($rel, '/')) {
+				return $origin . $rel; // root-relative
+			}
+			// path-relative: resolve against base directory, then normalise
+			$abs   = $basePath . $rel;
+			$parts = [];
+			foreach (explode('/', $abs) as $seg) {
+				if ($seg === '..') {
+					array_pop($parts);
+				} elseif ($seg !== '.') {
+					$parts[] = $seg;
+				}
+			}
+			return $origin . '/' . ltrim(implode('/', $parts), '/');
+		};
+
+		// Inline links and images: [text](url "optional title") or ![alt](url)
+		$markdown = preg_replace_callback(
+			'/(!?\[[^\]]*\])\((\S+?)((?:\s+"[^"]*")?\s*)\)/',
+			static function (array $m) use ($resolve): string {
+				return $m[1] . '(' . $resolve($m[2]) . $m[3] . ')';
+			},
+			$markdown
+		) ?? $markdown;
+
+		// Reference-style link definitions: [ref]: url optional-title
+		$markdown = preg_replace_callback(
+			'/^(\s*\[[^\]]+\]:\s*)(\S+)/m',
+			static function (array $m) use ($resolve): string {
+				return $m[1] . $resolve($m[2]);
+			},
+			$markdown
+		) ?? $markdown;
+
+		return $markdown;
 	}
 }
