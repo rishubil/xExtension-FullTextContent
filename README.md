@@ -21,6 +21,7 @@ This runs at feed refresh time (`EntryBeforeInsert`), so extracted content is pe
 
 - **FreshRSS 1.29.0+** (self-hosted).
 - **Linux x86_64** host (for the obscura binary; aarch64-linux builds are not available upstream yet).
+  > **Note:** The pre-built obscura binary from the upstream GitHub releases is dynamically linked against **glibc**. It will not run on Alpine-based images (which use musl libc). On Alpine you must build obscura from source and point the extension to the resulting binary via **Obscura binary path override** (see [Configuration](#configuration)).
 - **Node.js + npm** — required to run defuddle. See [Docker setup](#docker-setup) below.
 
 ## Installation
@@ -54,6 +55,8 @@ services:
 
 Alpine-based (freshrss/freshrss:alpine)
 
+> **Warning:** The default obscura binary (glibc) does not run on Alpine (musl libc). You must build obscura from source and set the **Obscura binary path override** in the extension's configuration page.
+
 ```yaml
 # docker-compose.yml
 services:
@@ -81,6 +84,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
 ```
 
 Alpine-based (freshrss/freshrss:alpine)
+
+> **Warning:** The default obscura binary (glibc) does not run on Alpine (musl libc). You must build obscura from source and set the **Obscura binary path override** in the extension's configuration page.
 
 ```dockerfile
 FROM freshrss/freshrss:alpine
