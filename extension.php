@@ -182,10 +182,10 @@ final class FullTextContentExtension extends Minz_Extension {
 	}
 
 	public function feedWait(FreshRSS_Feed $feed): int {
-		return (int) ($feed->attribute('fulltextcontent_wait') ?? 0);
+		return (int) ($feed->attributeInt('fulltextcontent_wait') ?? 0);
 	}
 
 	public function feedWaitUntil(FreshRSS_Feed $feed): string {
-		return (string) ($feed->attribute('fulltextcontent_wait_until') ?? '');
+		return (string) ($feed->attributeString('fulltextcontent_wait_until') ?? '');
 	}
 }

@@ -166,8 +166,8 @@ ksort($categories);
 									<?php
 										$fid       = (int) $feed->id();
 										$enabled   = $feed->attributeBoolean('fulltextcontent_enabled');
-										$wait      = (int) ($feed->attribute('fulltextcontent_wait') ?? 0);
-										$waitUntil = (string) ($feed->attribute('fulltextcontent_wait_until') ?? '');
+										$wait      = (int) ($feed->attributeInt('fulltextcontent_wait') ?? 0);
+										$waitUntil = (string) ($feed->attributeString('fulltextcontent_wait_until') ?? '');
 									?>
 									<tr>
 										<td>
