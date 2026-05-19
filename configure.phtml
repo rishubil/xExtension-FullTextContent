@@ -9,6 +9,7 @@ $latestDefuddle     = $defuddleManager->latestKnownVersion();
 $lastCheck          = $defuddleManager->lastCheckTimestamp();
 $obscuraDownloaded  = $binaryResolver->isDownloaded();
 $obscuraBinPath     = $binaryResolver->binaryPath();
+$obscuraVersion     = $binaryResolver->installedVersion();
 
 $nodeBinary           = $this->getUserConfigurationString('node_binary') ?? 'node';
 $obscuraDownloadUrl   = $this->getUserConfigurationString('obscura_download_url') ?? '';
@@ -106,6 +107,10 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 							<em><?php echo _t('ext.fulltextcontent.config.obscura_not_downloaded'); ?></em>
 						<?php endif; ?>
 					</td>
+				</tr>
+				<tr>
+					<th><?php echo _t('ext.fulltextcontent.config.obscura_version'); ?></th>
+					<td><?php echo $obscuraVersion !== null ? htmlspecialchars($obscuraVersion, ENT_QUOTES) : '<em>' . _t('ext.fulltextcontent.config.obscura_not_downloaded') . '</em>'; ?></td>
 				</tr>
 				<tr>
 					<th><?php echo _t('ext.fulltextcontent.config.defuddle_installed'); ?></th>
