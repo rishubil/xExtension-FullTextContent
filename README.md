@@ -20,7 +20,7 @@ This runs at feed refresh time (`EntryBeforeInsert`), so extracted content is pe
 ## Requirements
 
 - **FreshRSS 1.29.0+** (self-hosted).
-- **Linux x86_64** host (for the obscura binary; aarch64-linux builds are not available upstream yet).
+- **Linux x86_64 or aarch64** host (for the obscura binary).
   > **Note:** The pre-built obscura binary from the upstream GitHub releases is dynamically linked against **glibc**. It will not run on Alpine-based images (which use musl libc). On Alpine you must build obscura from source and point the extension to the resulting binary via **Obscura binary path override** (see [Configuration](#configuration)).
 - **Node.js + npm** — required to run defuddle. See [Docker setup](#docker-setup) below.
 
