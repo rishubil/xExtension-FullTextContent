@@ -21,6 +21,7 @@ return [
 
 			'status' => 'Status & Actions',
 			'obscura_status' => 'Obscura binary',
+			'obscura_version' => 'Obscura version',
 			'obscura_not_downloaded' => 'Not downloaded',
 			'obscura_path' => 'Path',
 			'defuddle_installed' => 'Defuddle installed',

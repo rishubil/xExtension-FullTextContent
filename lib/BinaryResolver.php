@@ -70,6 +70,21 @@ final class BinaryResolver {
 		return is_executable($this->binaryPath);
 	}
 
+	public function installedVersion(): ?string {
+		if (!$this->isDownloaded()) {
+			return null;
+		}
+		try {
+			$result = ProcRunner::run([$this->binaryPath, '--version'], '', 5);
+			if ($result['exit_code'] === 0) {
+				return trim($result['stdout']) ?: null;
+			}
+		} catch (Throwable) {
+			// ignore
+		}
+		return null;
+	}
+
 	public function defaultDownloadUrl(): string {
 		return self::DEFAULT_DOWNLOAD_URL;
 	}
