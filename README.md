@@ -120,7 +120,19 @@ Full-text fetching is disabled by default for all feeds. Toggle it per feed in t
 
 ### Unit tests
 
-Runs standalone (no FreshRSS or Docker required). PHP 8.1+ is the only dependency.
+Runs standalone — no FreshRSS required. Covers `ProcRunner`, `BinaryResolver`, `DefuddleManager`, and `Parsedown`.
+
+Use the `test.sh` wrapper, which prefers a host `php` binary and falls back to a Docker `php` container when PHP is not installed on the host:
+
+```bash
+bash scripts/test.sh
+
+# Force the Docker path even if host php exists, or override the image
+FORCE_DOCKER=1 bash scripts/test.sh
+PHP_IMAGE=php:8.2-cli bash scripts/test.sh
+```
+
+If PHP 8.1+ is installed on the host you can also run the script directly:
 
 ```bash
 php scripts/test.php

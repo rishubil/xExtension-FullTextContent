@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 // Standalone test script — no FreshRSS bootstrap needed.
 // Run: php scripts/test.php
+// Or use the wrapper (falls back to Docker when host php is absent): bash scripts/test.sh
 
 require_once __DIR__ . '/../lib/ProcRunner.php';
 require_once __DIR__ . '/../lib/BinaryResolver.php';
