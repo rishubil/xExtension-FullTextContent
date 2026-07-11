@@ -191,6 +191,150 @@ ok('replaced content has stripped non-article markers',
     !str_contains($entryC->content(), 'SITE_BANNER_TEXT_THAT_SHOULD_BE_STRIPPED'));
 
 // ---------------------------------------------------------------------------
+section('Feed setting helpers');
+// ---------------------------------------------------------------------------
+$feedS = new FreshRSS_Feed('http://example.net/', false);
+ok('feedWait default 0', $ext->feedWait($feedS) === 0);
+ok('feedWaitUntil default empty', $ext->feedWaitUntil($feedS) === '');
+ok('feedSelector default empty', $ext->feedSelector($feedS) === '');
+ok('feedStealth default false', $ext->feedStealth($feedS) === false);
+ok('feedTimeout default 0', $ext->feedTimeout($feedS) === 0);
+
+$feedS->_attribute('fulltextcontent_wait', 5);
+$feedS->_attribute('fulltextcontent_wait_until', 'networkidle0');
+$feedS->_attribute('fulltextcontent_selector', '#content');
+$feedS->_attribute('fulltextcontent_stealth', true);
+$feedS->_attribute('fulltextcontent_timeout', 45);
+ok('feedWait reads attribute', $ext->feedWait($feedS) === 5);
+ok('feedWaitUntil reads attribute', $ext->feedWaitUntil($feedS) === 'networkidle0');
+ok('feedSelector reads attribute', $ext->feedSelector($feedS) === '#content');
+ok('feedStealth reads attribute', $ext->feedStealth($feedS) === true);
+ok('feedTimeout reads attribute', $ext->feedTimeout($feedS) === 45);
+
+// ---------------------------------------------------------------------------
+section('Hook: entry with empty link -> unchanged');
+// ---------------------------------------------------------------------------
+$entryE = new FreshRSS_Entry(feedId: 0, link: '', content: 'original');
+$feedPropE = (new ReflectionClass($entryE))->getProperty('feed');
+$feedPropE->setAccessible(true);
+$enabledFeedE = new FreshRSS_Feed('http://example.net/', false);
+$enabledFeedE->_attribute('fulltextcontent_enabled', true);
+$feedPropE->setValue($entryE, $enabledFeedE);
+$resultE = $ext->onEntryBeforeInsert($entryE);
+ok('empty-link entry returned unchanged', $resultE?->content() === 'original');
+
+// ---------------------------------------------------------------------------
+section('handleConfigureAction: persists global + per-feed settings');
+// ---------------------------------------------------------------------------
+$catDao  = FreshRSS_Factory::createCategoryDao();
+$feedDao = FreshRSS_Factory::createFeedDao();
+
+$defaultCat = $catDao->getDefault();
+if ($defaultCat !== null) {
+    $catId = (int) $defaultCat->id();
+} else {
+    $cats = $catDao->listCategories(false);
+    $catId = !empty($cats) ? (int) reset($cats)->id() : (int) $catDao->addCategory(['name' => 'FTC Test Cat']);
+}
+
+$newFeed = new FreshRSS_Feed('http://ftc-config-test.example/feed.xml', false);
+$newFeed->_categoryId($catId);
+$newFeed->_name('FTC Config Test Feed');
+$feedId = $feedDao->addFeedObject($newFeed);
+ok('test feed created in DB', $feedId !== false && $feedId > 0);
+$fid = (string) $feedId;
+
+// Simulate a POST that enables the feed and sets every per-feed option + globals.
+$_SERVER['REQUEST_METHOD'] = 'POST';
+Minz_Request::_params([
+    'fulltextcontent_action'     => '',
+    'node_binary'                => '/usr/local/bin/node',
+    'obscura_download_url'       => 'https://example.com/obscura-{arch}.tar.gz',
+    'obscura_binary'             => '/opt/obscura',
+    'defuddle_version'           => '0.18.1',
+    'defuddle_check_interval'    => '72',
+    'fetch_timeout'              => '45',
+    'fulltextcontent_feeds'      => [$fid],
+    'fulltextcontent_wait'       => [$fid => '4'],
+    'fulltextcontent_wait_until' => [$fid => 'networkidle0'],
+    'fulltextcontent_selector'   => [$fid => '#main'],
+    'fulltextcontent_stealth'    => [$fid],
+    'fulltextcontent_timeout'    => [$fid => '20'],
+]);
+
+$ext->handleConfigureAction();
+
+// Global settings persisted (read back in-process).
+ok('global node_binary saved',
+    $ext->getUserConfigurationString('node_binary') === '/usr/local/bin/node');
+ok('global obscura_download_url saved',
+    $ext->getUserConfigurationString('obscura_download_url') === 'https://example.com/obscura-{arch}.tar.gz');
+ok('global obscura_binary saved',
+    $ext->getUserConfigurationString('obscura_binary') === '/opt/obscura');
+ok('global defuddle_version saved',
+    $ext->getUserConfigurationString('defuddle_version') === '0.18.1');
+ok('global defuddle_check_interval saved',
+    $ext->getUserConfigurationInt('defuddle_check_interval') === 72);
+ok('global fetch_timeout saved',
+    $ext->getUserConfigurationInt('fetch_timeout') === 45);
+
+// Per-feed settings persisted (reload from DB).
+$savedFeed = $feedDao->searchById($feedId);
+ok('feed reloaded from DB', $savedFeed !== null);
+ok('feed enabled attribute set',
+    $savedFeed?->attributeBoolean('fulltextcontent_enabled') === true);
+ok('feed wait persisted', $savedFeed?->attributeInt('fulltextcontent_wait') === 4);
+ok('feed wait_until persisted',
+    $savedFeed?->attributeString('fulltextcontent_wait_until') === 'networkidle0');
+ok('feed selector persisted',
+    $savedFeed?->attributeString('fulltextcontent_selector') === '#main');
+ok('feed stealth persisted',
+    $savedFeed?->attributeBoolean('fulltextcontent_stealth') === true);
+ok('feed timeout persisted', $savedFeed?->attributeInt('fulltextcontent_timeout') === 20);
+
+// ---------------------------------------------------------------------------
+section('handleConfigureAction: clears per-feed settings when unset/empty');
+// ---------------------------------------------------------------------------
+Minz_Request::_params([
+    'fulltextcontent_action'     => '',
+    'node_binary'                => 'node',
+    'obscura_download_url'       => '',
+    'obscura_binary'             => '',
+    'defuddle_version'           => 'latest',
+    'defuddle_check_interval'    => '168',
+    'fetch_timeout'              => '30',
+    'fulltextcontent_feeds'      => [],              // not enabled
+    'fulltextcontent_wait'       => [$fid => '0'],   // 0 -> null
+    'fulltextcontent_wait_until' => [$fid => '  '],  // whitespace -> null
+    'fulltextcontent_selector'   => [$fid => ''],    // empty -> null
+    'fulltextcontent_stealth'    => [],              // not stealth
+    'fulltextcontent_timeout'    => [$fid => '0'],   // 0 -> null
+]);
+
+$ext->handleConfigureAction();
+
+$clearedFeed = $feedDao->searchById($feedId);
+ok('feed disabled after empty submit',
+    $clearedFeed?->attributeBoolean('fulltextcontent_enabled') === false);
+ok('wait nulled when 0', $clearedFeed?->attributeInt('fulltextcontent_wait') === null);
+ok('wait_until nulled when whitespace',
+    $clearedFeed?->attributeString('fulltextcontent_wait_until') === null);
+ok('selector nulled when empty',
+    $clearedFeed?->attributeString('fulltextcontent_selector') === null);
+ok('stealth nulled when not selected',
+    $clearedFeed?->attributeBoolean('fulltextcontent_stealth') === null);
+ok('timeout nulled when 0', $clearedFeed?->attributeInt('fulltextcontent_timeout') === null);
+
+// ---------------------------------------------------------------------------
+section('handleConfigureAction: non-POST request is a no-op');
+// ---------------------------------------------------------------------------
+$_SERVER['REQUEST_METHOD'] = 'GET';
+Minz_Request::_params(['node_binary' => 'SHOULD_NOT_BE_SAVED']);
+$ext->handleConfigureAction();
+ok('GET request does not overwrite settings',
+    $ext->getUserConfigurationString('node_binary') === 'node');
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 $total = $passed + $failed;
