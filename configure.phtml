@@ -34,6 +34,7 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 
 	<form method="post" action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>">
 		<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
+		<input type="hidden" name="fulltextcontent_action" value="save_global" />
 
 		<section>
 			<h2><?php echo _t('ext.fulltextcontent.config.global'); ?></h2>
@@ -152,6 +153,7 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 
 		<form method="post" action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>">
 			<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
+			<input type="hidden" name="fulltextcontent_action" value="save_feeds" />
 
 			<?php if (empty($categories)): ?>
 				<p><?php echo _t('ext.fulltextcontent.config.no_feeds'); ?></p>

@@ -224,7 +224,7 @@ $resultE = $ext->onEntryBeforeInsert($entryE);
 ok('empty-link entry returned unchanged', $resultE?->content() === 'original');
 
 // ---------------------------------------------------------------------------
-section('handleConfigureAction: persists global + per-feed settings');
+section('handleConfigureAction: save_global persists global settings');
 // ---------------------------------------------------------------------------
 $catDao  = FreshRSS_Factory::createCategoryDao();
 $feedDao = FreshRSS_Factory::createFeedDao();
@@ -244,27 +244,19 @@ $feedId = $feedDao->addFeedObject($newFeed);
 ok('test feed created in DB', $feedId !== false && $feedId > 0);
 $fid = (string) $feedId;
 
-// Simulate a POST that enables the feed and sets every per-feed option + globals.
+// The global <form> carries ONLY global fields plus the save_global action.
 $_SERVER['REQUEST_METHOD'] = 'POST';
 Minz_Request::_params([
-    'fulltextcontent_action'     => '',
-    'node_binary'                => '/usr/local/bin/node',
-    'obscura_download_url'       => 'https://example.com/obscura-{arch}.tar.gz',
-    'obscura_binary'             => '/opt/obscura',
-    'defuddle_version'           => '0.18.1',
-    'defuddle_check_interval'    => '72',
-    'fetch_timeout'              => '45',
-    'fulltextcontent_feeds'      => [$fid],
-    'fulltextcontent_wait'       => [$fid => '4'],
-    'fulltextcontent_wait_until' => [$fid => 'networkidle0'],
-    'fulltextcontent_selector'   => [$fid => '#main'],
-    'fulltextcontent_stealth'    => [$fid],
-    'fulltextcontent_timeout'    => [$fid => '20'],
+    'fulltextcontent_action'  => 'save_global',
+    'node_binary'             => '/usr/local/bin/node',
+    'obscura_download_url'    => 'https://example.com/obscura-{arch}.tar.gz',
+    'obscura_binary'          => '/opt/obscura',
+    'defuddle_version'        => '0.18.1',
+    'defuddle_check_interval' => '72',
+    'fetch_timeout'           => '45',
 ]);
-
 $ext->handleConfigureAction();
 
-// Global settings persisted (read back in-process).
 ok('global node_binary saved',
     $ext->getUserConfigurationString('node_binary') === '/usr/local/bin/node');
 ok('global obscura_download_url saved',
@@ -277,6 +269,22 @@ ok('global defuddle_check_interval saved',
     $ext->getUserConfigurationInt('defuddle_check_interval') === 72);
 ok('global fetch_timeout saved',
     $ext->getUserConfigurationInt('fetch_timeout') === 45);
+
+// ---------------------------------------------------------------------------
+section('handleConfigureAction: save_feeds persists per-feed settings without touching globals');
+// ---------------------------------------------------------------------------
+// The per-feed <form> carries ONLY per-feed fields plus the save_feeds action —
+// no global fields at all. Simulate that exact POST shape.
+Minz_Request::_params([
+    'fulltextcontent_action'     => 'save_feeds',
+    'fulltextcontent_feeds'      => [$fid],
+    'fulltextcontent_wait'       => [$fid => '4'],
+    'fulltextcontent_wait_until' => [$fid => 'networkidle0'],
+    'fulltextcontent_selector'   => [$fid => '#main'],
+    'fulltextcontent_stealth'    => [$fid],
+    'fulltextcontent_timeout'    => [$fid => '20'],
+]);
+$ext->handleConfigureAction();
 
 // Per-feed settings persisted (reload from DB).
 $savedFeed = $feedDao->searchById($feedId);
@@ -292,17 +300,65 @@ ok('feed stealth persisted',
     $savedFeed?->attributeBoolean('fulltextcontent_stealth') === true);
 ok('feed timeout persisted', $savedFeed?->attributeInt('fulltextcontent_timeout') === 20);
 
+// REGRESSION (the bug this fixes): a feed-only save must NOT wipe global
+// settings just because the POST lacks the global fields.
+ok('save_feeds leaves node_binary intact',
+    $ext->getUserConfigurationString('node_binary') === '/usr/local/bin/node');
+ok('save_feeds leaves obscura_download_url intact',
+    $ext->getUserConfigurationString('obscura_download_url') === 'https://example.com/obscura-{arch}.tar.gz');
+ok('save_feeds leaves obscura_binary intact',
+    $ext->getUserConfigurationString('obscura_binary') === '/opt/obscura');
+ok('save_feeds leaves defuddle_version intact',
+    $ext->getUserConfigurationString('defuddle_version') === '0.18.1');
+ok('save_feeds leaves defuddle_check_interval intact',
+    $ext->getUserConfigurationInt('defuddle_check_interval') === 72);
+ok('save_feeds leaves fetch_timeout intact',
+    $ext->getUserConfigurationInt('fetch_timeout') === 45);
+
 // ---------------------------------------------------------------------------
-section('handleConfigureAction: clears per-feed settings when unset/empty');
+section('handleConfigureAction: save_global persists globals without touching feeds');
+// ---------------------------------------------------------------------------
+// The feed is currently enabled (previous section). A global-only POST must
+// leave every per-feed attribute untouched.
+Minz_Request::_params([
+    'fulltextcontent_action'  => 'save_global',
+    'node_binary'             => '/opt/node20/bin/node',
+    'obscura_download_url'    => 'https://cdn.example.net/o-{arch}.tgz',
+    'obscura_binary'          => '/srv/obscura',
+    'defuddle_version'        => '0.19.0',
+    'defuddle_check_interval' => '24',
+    'fetch_timeout'           => '60',
+]);
+$ext->handleConfigureAction();
+
+ok('global node_binary updated',
+    $ext->getUserConfigurationString('node_binary') === '/opt/node20/bin/node');
+ok('global defuddle_version updated',
+    $ext->getUserConfigurationString('defuddle_version') === '0.19.0');
+ok('global fetch_timeout updated',
+    $ext->getUserConfigurationInt('fetch_timeout') === 60);
+
+// REGRESSION (the bug this fixes): a global-only save must NOT disable or wipe
+// per-feed settings just because the POST lacks the per-feed fields.
+$feedAfterGlobal = $feedDao->searchById($feedId);
+ok('save_global leaves feed enabled',
+    $feedAfterGlobal?->attributeBoolean('fulltextcontent_enabled') === true);
+ok('save_global leaves feed wait intact',
+    $feedAfterGlobal?->attributeInt('fulltextcontent_wait') === 4);
+ok('save_global leaves feed wait_until intact',
+    $feedAfterGlobal?->attributeString('fulltextcontent_wait_until') === 'networkidle0');
+ok('save_global leaves feed selector intact',
+    $feedAfterGlobal?->attributeString('fulltextcontent_selector') === '#main');
+ok('save_global leaves feed stealth intact',
+    $feedAfterGlobal?->attributeBoolean('fulltextcontent_stealth') === true);
+ok('save_global leaves feed timeout intact',
+    $feedAfterGlobal?->attributeInt('fulltextcontent_timeout') === 20);
+
+// ---------------------------------------------------------------------------
+section('handleConfigureAction: save_feeds clears per-feed settings when unset/empty');
 // ---------------------------------------------------------------------------
 Minz_Request::_params([
-    'fulltextcontent_action'     => '',
-    'node_binary'                => 'node',
-    'obscura_download_url'       => '',
-    'obscura_binary'             => '',
-    'defuddle_version'           => 'latest',
-    'defuddle_check_interval'    => '168',
-    'fetch_timeout'              => '30',
+    'fulltextcontent_action'     => 'save_feeds',
     'fulltextcontent_feeds'      => [],              // not enabled
     'fulltextcontent_wait'       => [$fid => '0'],   // 0 -> null
     'fulltextcontent_wait_until' => [$fid => '  '],  // whitespace -> null
@@ -329,10 +385,10 @@ ok('timeout nulled when 0', $clearedFeed?->attributeInt('fulltextcontent_timeout
 section('handleConfigureAction: non-POST request is a no-op');
 // ---------------------------------------------------------------------------
 $_SERVER['REQUEST_METHOD'] = 'GET';
-Minz_Request::_params(['node_binary' => 'SHOULD_NOT_BE_SAVED']);
+Minz_Request::_params(['fulltextcontent_action' => 'save_global', 'node_binary' => 'SHOULD_NOT_BE_SAVED']);
 $ext->handleConfigureAction();
 ok('GET request does not overwrite settings',
-    $ext->getUserConfigurationString('node_binary') === 'node');
+    $ext->getUserConfigurationString('node_binary') === '/opt/node20/bin/node');
 
 // ---------------------------------------------------------------------------
 // Summary

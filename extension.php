@@ -97,27 +97,54 @@ final class FullTextContentExtension extends Minz_Extension {
 			return;
 		}
 
-		$action = Minz_Request::paramString('fulltextcontent_action');
-
-		if ($action === 'redownload_obscura') {
-			$this->actionRedownloadObscura();
-			return;
+		switch (Minz_Request::paramString('fulltextcontent_action')) {
+			case 'redownload_obscura':
+				$this->actionRedownloadObscura();
+				return;
+			case 'update_defuddle':
+				$this->actionUpdateDefuddle();
+				return;
+			case 'save_feeds':
+				$this->saveFeedSettings();
+				return;
+			case 'save_global':
+				$this->saveGlobalSettings();
+				return;
 		}
+	}
 
-		if ($action === 'update_defuddle') {
-			$this->actionUpdateDefuddle();
-			return;
+	// -------------------------------------------------------------------------
+	// Helpers
+	// -------------------------------------------------------------------------
+
+	private function actionRedownloadObscura(): void {
+		try {
+			$resolver = $this->buildBinaryResolver();
+			$resolver->ensure(true);
+		} catch (Throwable $e) {
+			Minz_Log::warning('[FullTextContent] Failed to redownload obscura: ' . $e->getMessage());
 		}
+	}
 
-		// Save global settings
+	private function actionUpdateDefuddle(): void {
+		try {
+			$manager = $this->buildDefuddleManager();
+			$manager->ensureInstalled(true);
+		} catch (Throwable $e) {
+			Minz_Log::warning('[FullTextContent] Failed to update defuddle: ' . $e->getMessage());
+		}
+	}
+
+	private function saveGlobalSettings(): void {
 		$this->setUserConfigurationValue('node_binary', Minz_Request::paramString('node_binary'));
 		$this->setUserConfigurationValue('obscura_download_url', Minz_Request::paramString('obscura_download_url'));
 		$this->setUserConfigurationValue('obscura_binary', Minz_Request::paramString('obscura_binary'));
 		$this->setUserConfigurationValue('defuddle_version', Minz_Request::paramString('defuddle_version'));
 		$this->setUserConfigurationValue('defuddle_check_interval', (int) Minz_Request::paramString('defuddle_check_interval'));
 		$this->setUserConfigurationValue('fetch_timeout', (int) Minz_Request::paramString('fetch_timeout'));
+	}
 
-		// Save per-feed settings
+	private function saveFeedSettings(): void {
 		$enabledFeeds    = Minz_Request::paramArray('fulltextcontent_feeds') ?: [];
 		$waitValues      = Minz_Request::paramArray('fulltextcontent_wait') ?: [];
 		$waitUntilValues = Minz_Request::paramArray('fulltextcontent_wait_until') ?: [];
@@ -146,28 +173,6 @@ final class FullTextContentExtension extends Minz_Extension {
 			$feed->_attribute('fulltextcontent_timeout', $timeout > 0 ? $timeout : null);
 
 			$feedDao->updateFeed($feed->id(), ['attributes' => $feed->attributes()]);
-		}
-	}
-
-	// -------------------------------------------------------------------------
-	// Helpers
-	// -------------------------------------------------------------------------
-
-	private function actionRedownloadObscura(): void {
-		try {
-			$resolver = $this->buildBinaryResolver();
-			$resolver->ensure(true);
-		} catch (Throwable $e) {
-			Minz_Log::warning('[FullTextContent] Failed to redownload obscura: ' . $e->getMessage());
-		}
-	}
-
-	private function actionUpdateDefuddle(): void {
-		try {
-			$manager = $this->buildDefuddleManager();
-			$manager->ensureInstalled(true);
-		} catch (Throwable $e) {
-			Minz_Log::warning('[FullTextContent] Failed to update defuddle: ' . $e->getMessage());
 		}
 	}
 
