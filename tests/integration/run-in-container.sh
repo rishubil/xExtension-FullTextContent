@@ -13,6 +13,7 @@ fi
 EXT=/var/www/FreshRSS/extensions/xExtension-FullTextContent
 FRESHRSS=/var/www/FreshRSS
 TEST_DEPS_DIR="${TEST_DEPS_DIR:-/opt/test-deps}"
+FRESHRSS_EXPECTED_VERSION="${FRESHRSS_EXPECTED_VERSION:?FRESHRSS_EXPECTED_VERSION must be set}"
 
 # ---------------------------------------------------------------------------
 # 1. Sanity checks: binaries must be present in the image
@@ -23,8 +24,8 @@ echo "==> Verifying baked-in binaries..."
 [[ -f "${TEST_DEPS_DIR}/.versions" ]]                || { echo "ERROR: ${TEST_DEPS_DIR}/.versions missing" >&2; exit 1; }
 
 # shellcheck source=/dev/null
-source "${TEST_DEPS_DIR}/.versions"  # exports DEFUDDLE_PINNED_VERSION
-export DEFUDDLE_PINNED_VERSION
+source "${TEST_DEPS_DIR}/.versions"  # exports DEFUDDLE_PINNED_VERSION, OBSCURA_PINNED_VERSION
+export DEFUDDLE_PINNED_VERSION OBSCURA_PINNED_VERSION
 
 echo "    obscura: $("${TEST_DEPS_DIR}/bin/obscura" --help 2>&1 | head --lines=1)"
 echo "    node:    $(node --version)"
@@ -35,12 +36,27 @@ if [[ "${INSTALLED_DEFUDDLE}" != "${DEFUDDLE_PINNED_VERSION}" ]]; then
     echo "ERROR: defuddle version mismatch (image=${INSTALLED_DEFUDDLE}, expected=${DEFUDDLE_PINNED_VERSION})" >&2
     exit 1
 fi
+INSTALLED_OBSCURA=$("${TEST_DEPS_DIR}/bin/obscura" --version 2>&1 | awk '{print $2}')
+echo "    obscura installed: ${INSTALLED_OBSCURA} (expected ${OBSCURA_PINNED_VERSION})"
+if [[ "${INSTALLED_OBSCURA}" != "${OBSCURA_PINNED_VERSION}" ]]; then
+    echo "ERROR: obscura version mismatch" >&2
+    exit 1
+fi
+INSTALLED_FRESHRSS=$(sed -n "s/^const FRESHRSS_VERSION = '\\([^']*\\)';/\\1/p" "${FRESHRSS}/constants.php")
+echo "    FreshRSS installed: ${INSTALLED_FRESHRSS} (expected ${FRESHRSS_EXPECTED_VERSION})"
+if [[ "${INSTALLED_FRESHRSS}" != "${FRESHRSS_EXPECTED_VERSION}" ]]; then
+    echo "ERROR: FreshRSS version mismatch" >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Initialise FreshRSS
 # ---------------------------------------------------------------------------
 echo ""
 echo "==> Initialising FreshRSS (SQLite)..."
+# Since FreshRSS 1.30 the image no longer ships ./data; prepare.php creates
+# the directory skeleton (the official Docker entrypoint does the same).
+php "${FRESHRSS}/cli/prepare.php" >/dev/null
 php "${FRESHRSS}/cli/do-install.php" \
     --default-user admin \
     --auth-type none \

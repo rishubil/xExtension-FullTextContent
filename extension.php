@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/ProcRunner.php';
+require_once __DIR__ . '/lib/HttpClient.php';
 require_once __DIR__ . '/lib/BinaryResolver.php';
 require_once __DIR__ . '/lib/DefuddleManager.php';
 require_once __DIR__ . '/lib/FullTextPipeline.php';
 require_once __DIR__ . '/lib/Parsedown.php';
+require_once __DIR__ . '/lib/VersionRequirements.php';
 
 final class FullTextContentExtension extends Minz_Extension {
 
@@ -99,16 +101,28 @@ final class FullTextContentExtension extends Minz_Extension {
 
 		switch (Minz_Request::paramString('fulltextcontent_action')) {
 			case 'redownload_obscura':
-				$this->actionRedownloadObscura();
+				$error = $this->actionRedownloadObscura();
+				// These actions only change files under DATA_PATH/fulltextcontent;
+				// without this FreshRSS keeps answering 304 with a stale status table.
+				invalidateHttpCache();
+				$this->notify($error === null, $error === null
+					? _t('ext.fulltextcontent.alert.obscura_redownloaded')
+					: $error);	// already reads "Failed to download obscura from <url>: <reason>"
 				return;
 			case 'update_defuddle':
-				$this->actionUpdateDefuddle();
+				$error = $this->actionUpdateDefuddle();
+				invalidateHttpCache();
+				$this->notify($error === null, $error === null
+					? _t('ext.fulltextcontent.alert.defuddle_updated')
+					: _t('ext.fulltextcontent.alert.error_defuddle') . $error);
 				return;
 			case 'save_feeds':
 				$this->saveFeedSettings();
+				$this->notify(true, _t('ext.fulltextcontent.alert.saved'));
 				return;
 			case 'save_global':
 				$this->saveGlobalSettings();
+				$this->notify(true, _t('ext.fulltextcontent.alert.saved'));
 				return;
 		}
 	}
@@ -117,21 +131,41 @@ final class FullTextContentExtension extends Minz_Extension {
 	// Helpers
 	// -------------------------------------------------------------------------
 
-	private function actionRedownloadObscura(): void {
-		try {
-			$resolver = $this->buildBinaryResolver();
-			$resolver->ensure(true);
-		} catch (Throwable $e) {
-			Minz_Log::warning('[FullTextContent] Failed to redownload obscura: ' . $e->getMessage());
+	/**
+	 * Shows a notification and redirects back to the configure page
+	 * (POST/redirect/GET). Skipped from the CLI, where a redirect would exit.
+	 */
+	private function notify(bool $success, string $message): void {
+		if (FreshRSS_Context::$isCli) {
+			return;
+		}
+		$url = ['c' => 'extension', 'a' => 'configure', 'params' => ['e' => $this->getName()]];
+		if ($success) {
+			Minz_Request::good($message, $url);
+		} else {
+			Minz_Request::bad($message, $url);
 		}
 	}
 
-	private function actionUpdateDefuddle(): void {
+	/** @return string|null Error message, or null on success. */
+	private function actionRedownloadObscura(): ?string {
 		try {
-			$manager = $this->buildDefuddleManager();
-			$manager->ensureInstalled(true);
+			$this->buildBinaryResolver()->ensure(true);
+			return null;
+		} catch (Throwable $e) {
+			Minz_Log::warning('[FullTextContent] Failed to redownload obscura: ' . $e->getMessage());
+			return $e->getMessage();
+		}
+	}
+
+	/** @return string|null Error message, or null on success. */
+	private function actionUpdateDefuddle(): ?string {
+		try {
+			$this->buildDefuddleManager()->ensureInstalled(true);
+			return null;
 		} catch (Throwable $e) {
 			Minz_Log::warning('[FullTextContent] Failed to update defuddle: ' . $e->getMessage());
+			return $e->getMessage();
 		}
 	}
 
@@ -142,6 +176,7 @@ final class FullTextContentExtension extends Minz_Extension {
 		$this->setUserConfigurationValue('defuddle_version', Minz_Request::paramString('defuddle_version'));
 		$this->setUserConfigurationValue('defuddle_check_interval', (int) Minz_Request::paramString('defuddle_check_interval'));
 		$this->setUserConfigurationValue('fetch_timeout', (int) Minz_Request::paramString('fetch_timeout'));
+		$this->setUserConfigurationValue('allow_private_network', Minz_Request::paramBoolean('allow_private_network'));
 	}
 
 	private function saveFeedSettings(): void {
@@ -182,7 +217,8 @@ final class FullTextContentExtension extends Minz_Extension {
 			$this->buildDefuddleManager(),
 			$this->getUserConfigurationString('node_binary') ?? self::DEFAULT_NODE_BINARY,
 			$this->getUserConfigurationInt('fetch_timeout') ?? self::DEFAULT_FETCH_TIMEOUT,
-			$this->getUserConfigurationString('obscura_binary') ?? ''
+			$this->getUserConfigurationString('obscura_binary') ?? '',
+			$this->getUserConfigurationBool('allow_private_network') ?? false
 		);
 	}
 

@@ -18,6 +18,8 @@ return [
 			'defuddle_check_interval_help' => 'How often to check for a newer defuddle version when set to "latest". Ignored when pinned.',
 			'fetch_timeout' => 'Fetch timeout (seconds)',
 			'fetch_timeout_help' => 'Maximum time (PHP process) to wait for obscura to fetch a URL.',
+			'allow_private_network' => 'Allow private network access',
+			'allow_private_network_help' => 'Let obscura fetch articles on loopback, private (RFC 1918) and link-local addresses, e.g. self-hosted sites on your LAN. Off by default to prevent SSRF; when enabled it applies to every fetch, including resources loaded by the article page.',
 
 			'status' => 'Status & Actions',
 			'obscura_status' => 'Obscura binary',
@@ -29,6 +31,11 @@ return [
 			'defuddle_last_check' => 'Last checked',
 			'defuddle_never_checked' => 'Never',
 			'defuddle_not_installed' => 'Not installed',
+
+			'version_unknown' => 'of unknown version',
+			'warn_obscura_old' => 'The obscura binary in use (obscura %s) is older than the minimum supported version %s. Click “Redownload obscura binary” or update the binary set as override.',
+			'warn_defuddle_installed_old' => 'The installed defuddle %s is older than the minimum supported version %s. Set the defuddle version to “latest” or at least %2$s, then click “Update defuddle now”.',
+			'warn_defuddle_pinned_old' => 'The configured defuddle version %s is older than the minimum supported version %s.',
 
 			'update_defuddle' => 'Update defuddle now',
 			'redownload_obscura' => 'Redownload obscura binary',
@@ -58,7 +65,6 @@ return [
 			'saved' => 'Settings saved.',
 			'obscura_redownloaded' => 'Obscura binary re-downloaded successfully.',
 			'defuddle_updated' => 'Defuddle updated successfully.',
-			'error_obscura' => 'Failed to download obscura binary: ',
 			'error_defuddle' => 'Failed to update defuddle: ',
 		],
 	],

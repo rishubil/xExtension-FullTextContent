@@ -18,3 +18,12 @@
 .ftc-refetch.ftc-error .ftc-status {
 	color: red;
 }
+.ftc-table-scroll {
+	max-width: 100%;
+	overflow-x: auto;
+}
+/* A fieldset's default min-width is min-content, which would let the wide
+   per-feed table stretch the whole page on narrow screens. */
+.extension-configure fieldset {
+	min-width: 0;
+}

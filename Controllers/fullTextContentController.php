@@ -25,21 +25,18 @@ final class FreshExtension_fullTextContent_Controller extends Minz_ActionControl
 		$entry = $entry_dao->searchById($entry_id);
 
 		if ($entry === null) {
-			echo json_encode(['status' => 404, 'error' => 'Entry not found']);
-			return;
+			$this->sendJson(['status' => 404, 'error' => 'Entry not found']);
 		}
 
 		$url = $entry->link();
 		if ($url === '') {
-			echo json_encode(['status' => 400, 'error' => 'Entry has no URL']);
-			return;
+			$this->sendJson(['status' => 400, 'error' => 'Entry has no URL']);
 		}
 
 		try {
 			$ext = Minz_ExtensionManager::findExtension('Full Text Content');
 			if (!($ext instanceof FullTextContentExtension)) {
-				echo json_encode(['status' => 500, 'error' => 'Extension not found']);
-				return;
+				$this->sendJson(['status' => 500, 'error' => 'Extension not found']);
 			}
 
 			$feed = $entry->feed();
@@ -54,8 +51,7 @@ final class FreshExtension_fullTextContent_Controller extends Minz_ActionControl
 			);
 
 			if ($html === '') {
-				echo json_encode(['status' => 500, 'error' => 'Failed to fetch content']);
-				return;
+				$this->sendJson(['status' => 500, 'error' => 'Failed to fetch content']);
 			}
 
 			$entry->_content($html);
@@ -63,14 +59,13 @@ final class FreshExtension_fullTextContent_Controller extends Minz_ActionControl
 			$success = $entry_dao->updateEntry($entry_values);
 
 			if (!$success) {
-				echo json_encode(['status' => 500, 'error' => 'Failed to save updated content']);
-				return;
+				$this->sendJson(['status' => 500, 'error' => 'Failed to save updated content']);
 			}
 
-			echo json_encode(['status' => 200, 'content' => $html]);
+			$this->sendJson(['status' => 200, 'content' => $html]);
 		} catch (Throwable $e) {
 			Minz_Log::warning('[FullTextContent] refetch failed: ' . $e->getMessage());
-			echo json_encode(['status' => 500, 'error' => $e->getMessage()]);
+			$this->sendJson(['status' => 500, 'error' => $e->getMessage()]);
 		}
 	}
 

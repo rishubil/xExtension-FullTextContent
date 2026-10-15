@@ -142,10 +142,12 @@ $confProp->setValue($ext, [
 // the cache path. Easiest: instantiate the pipeline directly so we test the
 // same code path the hook would take (buildPipeline composes the same objects).
 require_once $EXT . '/lib/ProcRunner.php';
+require_once $EXT . '/lib/HttpClient.php';
 require_once $EXT . '/lib/BinaryResolver.php';
 require_once $EXT . '/lib/DefuddleManager.php';
 require_once $EXT . '/lib/FullTextPipeline.php';
 require_once $EXT . '/lib/Parsedown.php';
+require_once $EXT . '/lib/VersionRequirements.php';
 
 // The extension's buildPipeline() uses getExtDataDir() = DATA_PATH/fulltextcontent.
 // We do NOT want to copy /cache there; instead we directly construct the pipeline
@@ -254,6 +256,7 @@ Minz_Request::_params([
     'defuddle_version'        => '0.18.1',
     'defuddle_check_interval' => '72',
     'fetch_timeout'           => '45',
+    'allow_private_network'   => '1',
 ]);
 $ext->handleConfigureAction();
 
@@ -269,6 +272,8 @@ ok('global defuddle_check_interval saved',
     $ext->getUserConfigurationInt('defuddle_check_interval') === 72);
 ok('global fetch_timeout saved',
     $ext->getUserConfigurationInt('fetch_timeout') === 45);
+ok('global allow_private_network saved',
+    $ext->getUserConfigurationBool('allow_private_network') === true);
 
 // ---------------------------------------------------------------------------
 section('handleConfigureAction: save_feeds persists per-feed settings without touching globals');
@@ -314,6 +319,8 @@ ok('save_feeds leaves defuddle_check_interval intact',
     $ext->getUserConfigurationInt('defuddle_check_interval') === 72);
 ok('save_feeds leaves fetch_timeout intact',
     $ext->getUserConfigurationInt('fetch_timeout') === 45);
+ok('save_feeds leaves allow_private_network intact',
+    $ext->getUserConfigurationBool('allow_private_network') === true);
 
 // ---------------------------------------------------------------------------
 section('handleConfigureAction: save_global persists globals without touching feeds');
@@ -337,6 +344,9 @@ ok('global defuddle_version updated',
     $ext->getUserConfigurationString('defuddle_version') === '0.19.0');
 ok('global fetch_timeout updated',
     $ext->getUserConfigurationInt('fetch_timeout') === 60);
+// An unchecked checkbox is absent from the POST and must save false.
+ok('global allow_private_network cleared when unchecked',
+    $ext->getUserConfigurationBool('allow_private_network') === false);
 
 // REGRESSION (the bug this fixes): a global-only save must NOT disable or wipe
 // per-feed settings just because the POST lacks the per-feed fields.
@@ -389,6 +399,61 @@ Minz_Request::_params(['fulltextcontent_action' => 'save_global', 'node_binary' 
 $ext->handleConfigureAction();
 ok('GET request does not overwrite settings',
     $ext->getUserConfigurationString('node_binary') === '/opt/node20/bin/node');
+
+// ---------------------------------------------------------------------------
+section('Downloads work although FreshRSS unregisters the http(s) stream wrappers');
+// ---------------------------------------------------------------------------
+// FreshRSS >= 1.30 calls unregister_unsafe_protocols() in lib_rss.php, so
+// file_get_contents('http://…') fails inside FreshRSS. Serve a fake obscura
+// archive and npm "latest" document from a local php -S server.
+if (version_compare(FRESHRSS_VERSION, '1.30.0', '>=')) {
+    ok('http stream wrapper is unregistered in FreshRSS context',
+        !in_array('http', stream_get_wrappers(), true));
+} else {
+    echo '  [INFO] FreshRSS ' . FRESHRSS_VERSION . " keeps the http stream wrapper; downloads must work either way\n";
+}
+
+$srvRoot = sys_get_temp_dir() . '/ftc_http_' . getmypid();
+@mkdir($srvRoot . '/src', 0755, true);
+file_put_contents($srvRoot . '/src/obscura', "#!/bin/sh\necho obscura-from-http " . str_repeat('x', 300) . "\n");
+chmod($srvRoot . '/src/obscura', 0755);
+$archArch = ['x86_64' => 'x86_64-linux', 'aarch64' => 'aarch64-linux', 'arm64' => 'aarch64-linux'][php_uname('m')] ?? 'unknown';
+ProcRunner::run(['tar', 'czf', "{$srvRoot}/obscura-{$archArch}.tar.gz", '-C', $srvRoot . '/src', 'obscura']);
+file_put_contents($srvRoot . '/latest.json', json_encode(['version' => '7.7.7']));
+
+$srv = proc_open(['php', '-S', '127.0.0.1:18099', '-t', $srvRoot], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $srvPipes);
+for ($i = 0; $i < 50 && @fsockopen('127.0.0.1', 18099) === false; $i++) {
+    usleep(100000);
+}
+
+$dlDir = $srvRoot . '/data';
+$httpResolver = new BinaryResolver($dlDir, 'http://127.0.0.1:18099/obscura-{arch}.tar.gz');
+try {
+    $dlPath = $httpResolver->ensure(true);
+    ok('BinaryResolver downloads over HTTP in FreshRSS context', is_executable($dlPath));
+    ok('downloaded binary is the served one',
+        str_contains(ProcRunner::run([$dlPath])['stdout'], 'obscura-from-http'));
+} catch (Throwable $e) {
+    ok('BinaryResolver downloads over HTTP in FreshRSS context', false, $e->getMessage());
+}
+
+$httpDm = new DefuddleManager($dlDir, 'latest', 168, 'http://127.0.0.1:18099/latest.json');
+try {
+    ok('DefuddleManager queries the registry in FreshRSS context', $httpDm->targetVersion() === '7.7.7');
+} catch (Throwable $e) {
+    ok('DefuddleManager queries the registry in FreshRSS context', false, $e->getMessage());
+}
+
+try {
+    (new BinaryResolver($dlDir, 'http://127.0.0.1:18099/missing-{arch}.tar.gz'))->ensure(true);
+    ok('HTTP 404 download raises RuntimeException', false);
+} catch (RuntimeException $e) {
+    ok('HTTP 404 download raises RuntimeException', str_contains($e->getMessage(), '404'), $e->getMessage());
+}
+
+proc_terminate($srv);
+proc_close($srv);
+ProcRunner::run(['rm', '-rf', $srvRoot]);
 
 // ---------------------------------------------------------------------------
 // Summary

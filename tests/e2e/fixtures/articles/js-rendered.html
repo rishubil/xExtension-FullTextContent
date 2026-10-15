@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>JavaScript Rendered Article</title>
+</head>
+<body>
+  <header class="site-header">SITE_BANNER_SHOULD_BE_STRIPPED</header>
+  <main>
+    <article id="post">
+      <h1>JavaScript Rendered Article</h1>
+      <p>This static paragraph is present in the raw HTML that the server sends to every client that asks.</p>
+    </article>
+  </main>
+  <footer class="site-footer">FOOTER_SHOULD_BE_STRIPPED</footer>
+  <script>
+    var p = document.createElement('p');
+    p.textContent = 'JS_RENDERED_PARAGRAPH: this sentence only exists after the browser executes the page script.';
+    document.getElementById('post').appendChild(p);
+  </script>
+</body>
+</html>

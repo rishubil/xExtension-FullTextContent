@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Standard Fixture Article</title>
+  <meta name="author" content="Fixture Author">
+</head>
+<body>
+  <header class="site-header"><div class="banner">SITE_BANNER_SHOULD_BE_STRIPPED</div>
+    <nav><a href="/">Home</a> <a href="/about">About</a></nav></header>
+  <aside class="sidebar"><ul><li><a href="/x">SIDEBAR_LINK_SHOULD_BE_STRIPPED</a></li></ul></aside>
+  <main>
+    <article>
+      <h1>Standard Fixture Article</h1>
+      <p>FULLTEXT_PARAGRAPH_ONE: this is the first paragraph of the full article body, long enough for extraction.</p>
+      <p>The second paragraph has <strong>bold words</strong> and <em>italic words</em> to check inline formatting survives.</p>
+      <p>A relative link to the <a href="../docs/guide.html">user guide</a> and a root-relative <a href="/about/team">team page</a> must become absolute.</p>
+      <figure><img src="/static/pixel.png" alt="fixture pixel"></figure>
+      <h2>Second section</h2>
+      <p>FULLTEXT_PARAGRAPH_LAST: the closing paragraph under a subheading for structural coverage of the extractor.</p>
+    </article>
+  </main>
+  <footer class="site-footer">FOOTER_SHOULD_BE_STRIPPED</footer>
+  <script>var SCRIPT_SHOULD_BE_STRIPPED = 1;</script>
+</body>
+</html>

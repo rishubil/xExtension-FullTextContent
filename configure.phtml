@@ -7,9 +7,7 @@ $binaryResolver  = $this->buildBinaryResolver();
 $installedDefuddle  = $defuddleManager->installedVersion();
 $latestDefuddle     = $defuddleManager->latestKnownVersion();
 $lastCheck          = $defuddleManager->lastCheckTimestamp();
-$obscuraDownloaded  = $binaryResolver->isDownloaded();
 $obscuraBinPath     = $binaryResolver->binaryPath();
-$obscuraVersion     = $binaryResolver->installedVersion();
 
 $nodeBinary           = $this->getUserConfigurationString('node_binary') ?? 'node';
 $obscuraDownloadUrl   = $this->getUserConfigurationString('obscura_download_url') ?? '';
@@ -17,6 +15,26 @@ $obscuraBinaryOverride = $this->getUserConfigurationString('obscura_binary') ?? 
 $defuddleVersion      = $this->getUserConfigurationString('defuddle_version') ?? 'latest';
 $checkInterval        = $this->getUserConfigurationInt('defuddle_check_interval') ?? 168;
 $fetchTimeout         = $this->getUserConfigurationInt('fetch_timeout') ?? 30;
+$allowPrivateNetwork  = $this->getUserConfigurationBool('allow_private_network') ?? false;
+
+// The binary the pipeline actually runs: the override when set, else the download.
+$obscuraEffectivePath = $obscuraBinaryOverride !== '' ? $obscuraBinaryOverride : $obscuraBinPath;
+$obscuraDownloaded    = is_executable($obscuraEffectivePath);
+$obscuraVersion       = BinaryResolver::probeVersion($obscuraEffectivePath);
+
+$versionWarnings = [];
+if ($obscuraDownloaded && !VersionRequirements::meets($obscuraVersion, VersionRequirements::OBSCURA_MIN)) {
+	$versionWarnings[] = _t('ext.fulltextcontent.config.warn_obscura_old',
+		VersionRequirements::parse($obscuraVersion) ?? _t('ext.fulltextcontent.config.version_unknown'), VersionRequirements::OBSCURA_MIN);
+}
+if ($installedDefuddle !== null && !VersionRequirements::meets($installedDefuddle, VersionRequirements::DEFUDDLE_MIN)) {
+	$versionWarnings[] = _t('ext.fulltextcontent.config.warn_defuddle_installed_old',
+		$installedDefuddle, VersionRequirements::DEFUDDLE_MIN);
+}
+if ($defuddleVersion !== 'latest' && !VersionRequirements::meets($defuddleVersion, VersionRequirements::DEFUDDLE_MIN)) {
+	$versionWarnings[] = _t('ext.fulltextcontent.config.warn_defuddle_pinned_old',
+		$defuddleVersion, VersionRequirements::DEFUDDLE_MIN);
+}
 
 $feedDao   = FreshRSS_Factory::createFeedDao();
 $allFeeds  = $feedDao->listFeeds();
@@ -85,6 +103,15 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.fetch_timeout_help'); ?></p>
 			</div>
 
+			<div class="form-group">
+				<label for="allow_private_network">
+					<input type="checkbox" id="allow_private_network" name="allow_private_network" value="1"
+						<?php echo $allowPrivateNetwork ? 'checked' : ''; ?> />
+					<?php echo _t('ext.fulltextcontent.config.allow_private_network'); ?>
+				</label>
+				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.allow_private_network_help'); ?></p>
+			</div>
+
 			<button type="submit" class="btn btn-primary">
 				<?php echo _t('ext.fulltextcontent.config.save'); ?>
 			</button>
@@ -97,13 +124,18 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 	<section>
 		<h2><?php echo _t('ext.fulltextcontent.config.status'); ?></h2>
 
+		<?php foreach ($versionWarnings as $warning): ?>
+			<p class="alert alert-warn ftc-version-warning"><?php echo htmlspecialchars($warning, ENT_QUOTES); ?></p>
+		<?php endforeach; ?>
+
+		<div class="ftc-table-scroll">
 		<table class="table">
 			<tbody>
 				<tr>
 					<th><?php echo _t('ext.fulltextcontent.config.obscura_status'); ?></th>
 					<td>
 						<?php if ($obscuraDownloaded): ?>
-							<code><?php echo htmlspecialchars($obscuraBinPath, ENT_QUOTES); ?></code>
+							<code><?php echo htmlspecialchars($obscuraEffectivePath, ENT_QUOTES); ?></code>
 						<?php else: ?>
 							<em><?php echo _t('ext.fulltextcontent.config.obscura_not_downloaded'); ?></em>
 						<?php endif; ?>
@@ -127,6 +159,7 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 				</tr>
 			</tbody>
 		</table>
+		</div>
 
 		<form method="post" action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>" style="display:inline-block; margin-right: 0.5em;">
 			<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
@@ -161,6 +194,7 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 				<?php foreach ($categories as $catName => $feeds): ?>
 					<fieldset>
 						<legend><?php echo htmlspecialchars($catName, ENT_QUOTES); ?></legend>
+						<div class="ftc-table-scroll">
 						<table class="table">
 							<thead>
 								<tr>
@@ -238,6 +272,7 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 								<?php endforeach; ?>
 							</tbody>
 						</table>
+						</div>
 					</fieldset>
 				<?php endforeach; ?>
 

@@ -1,0 +1,69 @@
+name: ftc-e2e
+
+x-versions: &versions
+  FRESHRSS_VERSION: "${FRESHRSS_VERSION:-1.30.1}"
+  OBSCURA_VERSION: "v0.2.4"
+
+services:
+  fixtures:
+    build:
+      context: fixtures
+      args: *versions
+    environment:
+      BASE_URL: http://fixtures:8080
+    ports:
+      - "127.0.0.1:${E2E_FIXTURES_PORT:-18081}:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      retries: 30
+
+  freshrss:
+    image: ftc-e2e-freshrss:${FRESHRSS_VERSION:-1.30.1}
+    build:
+      context: .
+      dockerfile: freshrss.Dockerfile
+      args: *versions
+    environment:
+      TZ: UTC
+      FRESHRSS_INSTALL: >-
+        --default-user admin --auth-type form --environment development
+        --base-url http://freshrss --language en --db-type sqlite
+        --title 'FreshRSS E2E'
+      FRESHRSS_USER: >-
+        --user admin --password e2e-password --language en --no-default-feeds
+      # FreshRSS >= 1.30 blocks feeds on private networks unless allowlisted.
+      INTERNAL_HOST_ALLOWLIST: fixtures:8080
+    volumes:
+      - type: bind
+        source: ../..
+        target: /var/www/FreshRSS/extensions/xExtension-FullTextContent
+        read_only: true
+    ports:
+      - "127.0.0.1:${E2E_PORT:-18080}:80"
+    depends_on:
+      fixtures:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://localhost/i/') === false ? 1 : 0);"]
+      interval: 2s
+      retries: 60
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    profiles: ["test"]
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /e2e
+    environment:
+      HOME: /tmp
+      CI: "1"
+      BASE_URL: http://freshrss
+      FIXTURES_URL: http://fixtures:8080
+    volumes:
+      - type: bind
+        source: .
+        target: /e2e
+    command: ["sh", "-c", "npm ci --no-audit --no-fund && npx playwright test"]
+    depends_on:
+      freshrss:
+        condition: service_healthy

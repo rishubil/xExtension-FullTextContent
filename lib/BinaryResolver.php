@@ -71,11 +71,16 @@ final class BinaryResolver {
 	}
 
 	public function installedVersion(): ?string {
-		if (!$this->isDownloaded()) {
+		return self::probeVersion($this->binaryPath);
+	}
+
+	/** Raw `--version` output of an obscura binary (e.g. "obscura 0.2.4"), or null. */
+	public static function probeVersion(string $binary): ?string {
+		if ($binary === '' || !is_executable($binary)) {
 			return null;
 		}
 		try {
-			$result = ProcRunner::run([$this->binaryPath, '--version'], '', 5);
+			$result = ProcRunner::run([$binary, '--version'], '', 5);
 			if ($result['exit_code'] === 0) {
 				return trim($result['stdout']) ?: null;
 			}
@@ -99,30 +104,14 @@ final class BinaryResolver {
 	}
 
 	private function download(string $url, string $destination): void {
-		$ctx = stream_context_create([
-			'http' => [
-				'timeout' => 60,
-				'follow_location' => 1,
-				'max_redirects' => 5,
-				'user_agent' => 'xExtension-FullTextContent/0.1',
-				'header' => "Accept: application/octet-stream\r\n",
-			],
-			'https' => [
-				'timeout' => 60,
-				'follow_location' => 1,
-				'max_redirects' => 5,
-				'user_agent' => 'xExtension-FullTextContent/0.1',
-				'header' => "Accept: application/octet-stream\r\n",
-			],
-		]);
-
-		$data = file_get_contents($url, false, $ctx);
-		if ($data === false || strlen($data) < 100) {
-			throw new RuntimeException('Failed to download obscura from: ' . $url);
+		try {
+			HttpClient::download($url, $destination);
+		} catch (RuntimeException $e) {
+			throw new RuntimeException('Failed to download obscura from ' . $url . ': ' . $e->getMessage(), 0, $e);
 		}
-
-		if (file_put_contents($destination, $data) === false) {
-			throw new RuntimeException('Failed to write archive to: ' . $destination);
+		if ((int) @filesize($destination) < 100) {
+			@unlink($destination);
+			throw new RuntimeException('Failed to download obscura from ' . $url . ': response too small');
 		}
 	}
 

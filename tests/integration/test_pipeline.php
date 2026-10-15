@@ -15,10 +15,12 @@ $FIXTURES  = $EXT . '/tests/integration/fixtures';
 $CACHE_DIR = getenv('TEST_DEPS_DIR') ?: '/opt/test-deps';
 
 require_once $EXT . '/lib/ProcRunner.php';
+require_once $EXT . '/lib/HttpClient.php';
 require_once $EXT . '/lib/BinaryResolver.php';
 require_once $EXT . '/lib/DefuddleManager.php';
 require_once $EXT . '/lib/FullTextPipeline.php';
 require_once $EXT . '/lib/Parsedown.php';
+require_once $EXT . '/lib/VersionRequirements.php';
 
 $passed = 0;
 $failed = 0;

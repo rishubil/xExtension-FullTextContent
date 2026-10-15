@@ -10,7 +10,7 @@ declare(strict_types=1);
  *  - "<semver>"    → pin to that exact version; never auto-upgrade.
  */
 final class DefuddleManager {
-	private const NPM_REGISTRY_URL = 'https://registry.npmjs.org/defuddle/latest';
+	private const DEFAULT_REGISTRY_URL = 'https://registry.npmjs.org/defuddle/latest';
 	private const LOCK_FILE = 'defuddle-install.lock';
 	private const STATE_FILE = 'version.json';
 	private const CLI_ENTRYPOINT = 'node_modules/defuddle/dist/cli.js';
@@ -18,13 +18,20 @@ final class DefuddleManager {
 	private string $dataDir;
 	private string $configuredVersion;
 	private int $checkIntervalHours;
+	private string $registryUrl;
 
 	private static bool $checked = false;
 
-	public function __construct(string $dataDir, string $configuredVersion = 'latest', int $checkIntervalHours = 168) {
+	public function __construct(
+		string $dataDir,
+		string $configuredVersion = 'latest',
+		int $checkIntervalHours = 168,
+		string $registryUrl = self::DEFAULT_REGISTRY_URL
+	) {
 		$this->dataDir = rtrim($dataDir, '/');
 		$this->configuredVersion = $configuredVersion !== '' ? $configuredVersion : 'latest';
 		$this->checkIntervalHours = max(1, $checkIntervalHours);
+		$this->registryUrl = $registryUrl;
 	}
 
 	/**
@@ -104,12 +111,10 @@ final class DefuddleManager {
 	}
 
 	private function fetchLatestVersion(): string {
-		$ctx = stream_context_create([
-			'http' => ['timeout' => 10, 'user_agent' => 'xExtension-FullTextContent/0.1'],
-		]);
-		$body = @file_get_contents(self::NPM_REGISTRY_URL, false, $ctx);
-		if ($body === false) {
-			throw new RuntimeException('Failed to query npm registry for defuddle version.');
+		try {
+			$body = HttpClient::get($this->registryUrl);
+		} catch (RuntimeException $e) {
+			throw new RuntimeException('Failed to query npm registry for defuddle version: ' . $e->getMessage(), 0, $e);
 		}
 		$data = json_decode($body, true);
 		if (!is_array($data) || empty($data['version'])) {
@@ -149,7 +154,7 @@ final class DefuddleManager {
 				120
 			);
 			if ($result['exit_code'] !== 0) {
-				throw new RuntimeException('npm install failed: ' . trim($result['stderr']));
+				throw new RuntimeException('npm install failed: ' . self::summarizeNpmError($result['stderr']));
 			}
 
 			$this->writeState([
@@ -161,6 +166,26 @@ final class DefuddleManager {
 			flock($fh, LOCK_UN);
 			fclose($fh);
 		}
+	}
+
+	/**
+	 * Condenses npm's stderr to its cause: strips the "npm ERR!" (npm <= 9) /
+	 * "npm error" (npm >= 10) prefixes and the pointer to the debug log.
+	 */
+	public static function summarizeNpmError(string $stderr): string {
+		$lines = [];
+		foreach (preg_split('/\R/', $stderr) ?: [] as $line) {
+			$line = trim((string) preg_replace('/^npm (ERR!|error)\s*/', '', trim($line)));
+			if ($line === '' || str_contains($line, 'complete log of this run') || str_contains($line, '/_logs/')) {
+				continue;
+			}
+			$lines[] = $line;
+		}
+		$summary = implode(' ', $lines);
+		if ($summary === '') {
+			return 'unknown npm error';
+		}
+		return strlen($summary) > 400 ? substr($summary, 0, 397) . '...' : $summary;
 	}
 
 	/** @return array<string,mixed> */

@@ -1,6 +1,8 @@
-FROM freshrss/freshrss:latest
+ARG FRESHRSS_VERSION=1.30.1
+FROM freshrss/freshrss:${FRESHRSS_VERSION}
 
-ARG DEFUDDLE_VERSION=0.18.1
+ARG DEFUDDLE_VERSION=0.19.5
+ARG OBSCURA_VERSION=v0.2.4
 
 RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
@@ -12,7 +14,7 @@ RUN ARCH=$(uname -m) \
          x86_64)        OBSCURA_ARCH="x86_64-linux"  ;; \
          *) echo "Unsupported arch: $ARCH" && exit 1  ;; \
        esac \
-    && OBSCURA_URL="https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-${OBSCURA_ARCH}.tar.gz" \
+    && OBSCURA_URL="https://github.com/h4ckf0r0day/obscura/releases/download/${OBSCURA_VERSION}/obscura-${OBSCURA_ARCH}.tar.gz" \
     && mkdir -p /opt/test-deps/bin \
     && curl -fsSL --insecure --max-time 180 -o /tmp/obscura.tar.gz "$OBSCURA_URL" \
     && tar -xzf /tmp/obscura.tar.gz -C /opt/test-deps/bin \
@@ -23,4 +25,4 @@ RUN ARCH=$(uname -m) \
 # be disabled in self-signed-cert environments (Claude Code web sandbox).
 RUN echo "strict-ssl=false" > /root/.npmrc \
     && npm install --no-audit --no-fund --prefix /opt/test-deps "defuddle@${DEFUDDLE_VERSION}" \
-    && echo "DEFUDDLE_PINNED_VERSION=${DEFUDDLE_VERSION}" > /opt/test-deps/.versions
+    && printf "DEFUDDLE_PINNED_VERSION=%s\nOBSCURA_PINNED_VERSION=%s\n" "${DEFUDDLE_VERSION}" "${OBSCURA_VERSION#v}" > /opt/test-deps/.versions

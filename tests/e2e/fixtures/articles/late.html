@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Late Content Article</title>
+</head>
+<body>
+  <main>
+    <article id="post">
+      <h1>Late Content Article</h1>
+      <p>This static paragraph is present immediately, while the main body is injected by a delayed timer.</p>
+    </article>
+  </main>
+  <script>
+    setTimeout(function () {
+      var div = document.createElement('div');
+      div.id = 'late-content';
+      // Built at runtime so the marker never appears in the raw HTML.
+      div.innerHTML = '<p>' + 'LATE_CONTENT' + '_PARAGRAPH: inserted three seconds after load by a timer on the page.</p>';
+      document.getElementById('post').appendChild(div);
+    }, 3000);
+  </script>
+</body>
+</html>

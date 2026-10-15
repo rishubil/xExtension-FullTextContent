@@ -1,10 +1,13 @@
 services:
   tests:
+    image: ftc-integration-tests:${FRESHRSS_VERSION:-1.30.1}
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        DEFUDDLE_VERSION: "0.18.1"
+        FRESHRSS_VERSION: "${FRESHRSS_VERSION:-1.30.1}"
+        DEFUDDLE_VERSION: "0.19.5"
+        OBSCURA_VERSION: "v0.2.4"
     user: root
     entrypoint: ""
     command:
@@ -13,6 +16,7 @@ services:
     environment:
       DATA_PATH: /var/www/FreshRSS/data
       TEST_DEPS_DIR: /opt/test-deps
+      FRESHRSS_EXPECTED_VERSION: "${FRESHRSS_VERSION:-1.30.1}"
     volumes:
       - type: bind
         source: ../..

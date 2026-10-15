@@ -18,6 +18,7 @@ final class FullTextPipeline {
 	private string $nodeBinary;
 	private int $fetchTimeoutSec;
 	private string $obscuraBinaryOverride;
+	private bool $allowPrivateNetwork;
 
 	/** @var callable[] */
 	private array $markdownHooks = [];
@@ -27,13 +28,15 @@ final class FullTextPipeline {
 		DefuddleManager $defuddleManager,
 		string $nodeBinary = 'node',
 		int $fetchTimeoutSec = 30,
-		string $obscuraBinaryOverride = ''
+		string $obscuraBinaryOverride = '',
+		bool $allowPrivateNetwork = false
 	) {
 		$this->binaryResolver = $binaryResolver;
 		$this->defuddleManager = $defuddleManager;
 		$this->nodeBinary = $nodeBinary !== '' ? $nodeBinary : 'node';
 		$this->fetchTimeoutSec = max(5, $fetchTimeoutSec);
 		$this->obscuraBinaryOverride = $obscuraBinaryOverride;
+		$this->allowPrivateNetwork = $allowPrivateNetwork;
 	}
 
 	/**
@@ -94,6 +97,10 @@ final class FullTextPipeline {
 			$fetchCmd[] = '--timeout';
 			$fetchCmd[] = (string) $timeout;
 		}
+		// obscura >= 0.2 blocks loopback/RFC1918/link-local targets by default.
+		if ($this->allowPrivateNetwork) {
+			$fetchCmd[] = '--allow-private-network';
+		}
 
 		$fetchResult = ProcRunner::run($fetchCmd, '', $this->fetchTimeoutSec);
 		if ($fetchResult['exit_code'] !== 0 || trim($fetchResult['stdout']) === '') {
@@ -113,7 +120,9 @@ final class FullTextPipeline {
 				30
 			);
 			if ($defuddleResult['exit_code'] !== 0 || trim($defuddleResult['stdout']) === '') {
-				throw new RuntimeException('defuddle parse failed: ' . trim($defuddleResult['stderr']));
+				// Report the article URL rather than the internal temporary file.
+				$stderr = str_replace($tmpFile, $url, trim($defuddleResult['stderr']));
+				throw new RuntimeException('defuddle parse failed: ' . $stderr);
 			}
 
 			$markdown = $defuddleResult['stdout'];

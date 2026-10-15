@@ -19,8 +19,10 @@ defuddle (no mocks). Both are baked into a custom Docker image at build
 time so the host only needs a Docker daemon.
 
 Environment variables:
-  DOCKER_HOST   Docker socket path (default: unix:///var/run/docker.sock)
-  TRACE=1       Enable xtrace debug output
+  DOCKER_HOST       Docker socket path (default: unix:///var/run/docker.sock)
+  FRESHRSS_VERSIONS  Space-separated FreshRSS versions to test (default: the
+                     freshrss_min_version from metadata.json and 1.30.1)
+  TRACE=1           Enable xtrace debug output
 '
     exit
 fi
@@ -28,6 +30,9 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${PROJECT_ROOT}/tests/integration/docker-compose.test.yml"
+
+# shellcheck source=scripts/freshrss-versions.sh
+source "${SCRIPT_DIR}/freshrss-versions.sh"
 
 DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
 export DOCKER_HOST
@@ -53,20 +58,13 @@ run_shell_test() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Build the test image (Docker layer cache makes re-runs fast)
-# ---------------------------------------------------------------------------
-echo "==> Building test image..."
-docker compose \
-    --file "${COMPOSE_FILE}" \
-    build
-
-# ---------------------------------------------------------------------------
-# 2. Run shell script tests against the real FreshRSS images
+# Run shell script tests against the real FreshRSS images
 # ---------------------------------------------------------------------------
 echo ""
 echo "==> Running shell script tests..."
 
-for image in freshrss/freshrss:latest freshrss/freshrss:alpine; do
+for version in ${FRESHRSS_VERSIONS}; do
+for image in "freshrss/freshrss:${version}" "freshrss/freshrss:${version}-alpine"; do
     echo ""
     echo "=== Shell Script Tests (${image}) ==="
 
@@ -88,8 +86,9 @@ for image in freshrss/freshrss:latest freshrss/freshrss:alpine; do
         docker run --rm \
             -v "${PROJECT_ROOT}/scripts:/scripts:ro" \
             "${image}" \
-            sh -c '(timeout 30 sh /scripts/entrypoint.sh 2>/dev/null || true)
+            sh -c '(timeout 300 sh /scripts/entrypoint.sh >/dev/null 2>&1 || true)
                    command -v node && command -v npm'
+done
 done
 
 echo ""
@@ -99,7 +98,7 @@ printf -- "--- Shell script results: %d/%d passed" "${SHELL_TEST_PASS}" "${total
 printf " ---\n"
 
 # ---------------------------------------------------------------------------
-# 3. Run the integration test suite in a fresh container
+# Run the integration test suite in a fresh container, once per version
 # ---------------------------------------------------------------------------
 cleanup() {
     echo ""
@@ -110,14 +109,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo ""
-echo "==> Running integration tests (Docker host: ${DOCKER_HOST})"
-echo ""
-
 INTEGRATION_EXIT=0
-docker compose \
-    --file "${COMPOSE_FILE}" \
-    run --rm tests || INTEGRATION_EXIT=$?
+INTEGRATION_FAILED_VERSIONS=""
+for version in ${FRESHRSS_VERSIONS}; do
+    export FRESHRSS_VERSION="${version}"
+    # Remove state left behind by an interrupted previous run (stale volume
+    # makes do-install.php fail with "already installed").
+    cleanup >/dev/null
+
+    echo ""
+    echo "==> Building test image for FreshRSS ${version}..."
+    docker compose --file "${COMPOSE_FILE}" build
+
+    echo ""
+    echo "==> Running integration tests on FreshRSS ${version} (Docker host: ${DOCKER_HOST})"
+    echo ""
+    if ! docker compose --file "${COMPOSE_FILE}" run --rm tests; then
+        INTEGRATION_EXIT=1
+        INTEGRATION_FAILED_VERSIONS="${INTEGRATION_FAILED_VERSIONS} ${version}"
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # Summary
@@ -132,9 +143,9 @@ printf "    Shell script tests:  %d/%d passed" "${SHELL_TEST_PASS}" "${shell_tot
 printf "\n"
 
 if [[ "${INTEGRATION_EXIT}" -eq 0 ]]; then
-    printf "    Integration tests:   PASSED\n"
+    printf "    Integration tests:   PASSED (FreshRSS %s)\n" "${FRESHRSS_VERSIONS}"
 else
-    printf "    Integration tests:   FAILED (exit %d)\n" "${INTEGRATION_EXIT}"
+    printf "    Integration tests:   FAILED on FreshRSS%s\n" "${INTEGRATION_FAILED_VERSIONS}"
 fi
 
 echo ""

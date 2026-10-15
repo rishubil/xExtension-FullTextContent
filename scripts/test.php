@@ -7,10 +7,12 @@ declare(strict_types=1);
 // Or use the wrapper (falls back to Docker when host php is absent): bash scripts/test.sh
 
 require_once __DIR__ . '/../lib/ProcRunner.php';
+require_once __DIR__ . '/../lib/HttpClient.php';
 require_once __DIR__ . '/../lib/BinaryResolver.php';
 require_once __DIR__ . '/../lib/DefuddleManager.php';
 require_once __DIR__ . '/../lib/FullTextPipeline.php';
 require_once __DIR__ . '/../lib/Parsedown.php';
+require_once __DIR__ . '/../lib/VersionRequirements.php';
 
 $passed = 0;
 $failed = 0;
@@ -189,6 +191,7 @@ if ($hostArch === null) {
     }
 
     // Unreachable URL -> download failure.
+    $failUrl = 'file://' . $dlBase . '/does-not-exist-' . $hostArch . '.tar.gz';
     $failResolver = new BinaryResolver($dlBase . '/data3', 'file://' . $dlBase . '/does-not-exist-{arch}.tar.gz');
     try {
         @$failResolver->ensure();
@@ -196,6 +199,8 @@ if ($hostArch === null) {
     } catch (RuntimeException $e) {
         ok('download failure raises RuntimeException',
             str_contains($e->getMessage(), 'Failed to download'));
+        ok('download failure message names the URL exactly once',
+            substr_count($e->getMessage(), $failUrl) === 1);
     }
 
     ProcRunner::run(['rm', '-rf', $dlBase]);
@@ -299,6 +304,34 @@ ok('--wait-until passed through', str_contains($log2, '--wait-until networkidle0
 ok('--selector passed through', str_contains($log2, '--selector #main'));
 ok('--stealth passed through', str_contains($log2, '--stealth'));
 ok('--timeout passed through', str_contains($log2, '--timeout 15'));
+ok('no --allow-private-network flag by default', !str_contains($log1 . $log2, '--allow-private-network'));
+
+// Private network access is an explicit opt-in (obscura blocks it by default).
+$privatePipeline = new FullTextPipeline(
+    new BinaryResolver($stubDir . '/unused', ''),
+    $stubDm,
+    $nodeStub,
+    30,
+    $obscuraStub,
+    true             // allowPrivateNetwork
+);
+@unlink($argsLog);
+$privatePipeline->run($baseUrl);
+$log3 = (string) @file_get_contents($argsLog);
+ok('--allow-private-network passed when enabled', str_contains($log3, '--allow-private-network'));
+
+// defuddle failures mention the article URL instead of the temporary file.
+$failNode = $stubDir . '/node-fail';
+file_put_contents($failNode, "#!/bin/sh\necho \"Error: No content could be extracted from \$3\" >&2\nexit 1\n");
+chmod($failNode, 0755);
+$failPipeline = new FullTextPipeline(new BinaryResolver($stubDir . '/unused', ''), $stubDm, $failNode, 30, $obscuraStub);
+try {
+    $failPipeline->run($baseUrl);
+    ok('defuddle failure raises RuntimeException', false);
+} catch (RuntimeException $e) {
+    ok('defuddle failure message names the article URL', str_contains($e->getMessage(), $baseUrl));
+    ok('defuddle failure message hides the temp file', !str_contains($e->getMessage(), sys_get_temp_dir() . '/ftc_'));
+}
 
 // Empty URL short-circuits before invoking obscura.
 ok('empty URL returns empty string', $pipeline->run('') === '');
@@ -346,6 +379,59 @@ ok('empty markdown returns empty',
     $resolve('', 'https://example.com/') === '');
 
 ProcRunner::run(['rm', '-rf', $stubDir]);
+
+// ---------------------------------------------------------------------------
+// DefuddleManager::summarizeNpmError
+// ---------------------------------------------------------------------------
+section('DefuddleManager npm error summary');
+
+$npm9 = "npm ERR! code ETARGET\nnpm ERR! notarget No matching version found for defuddle@0.0.0-nope.\n"
+    . "npm ERR! notarget In most cases you or one of your dependencies are requesting\n"
+    . "npm ERR! notarget a package version that doesn't exist.\n\n"
+    . "npm ERR! A complete log of this run can be found in:\nnpm ERR!     /data/.npm-cache/_logs/x-debug-0.log\n";
+$sum9 = DefuddleManager::summarizeNpmError($npm9);
+ok('npm 9 summary keeps the cause', str_contains($sum9, 'No matching version found for defuddle@0.0.0-nope'));
+ok('npm 9 summary strips "npm ERR!" prefixes', !str_contains($sum9, 'npm ERR!'));
+ok('npm 9 summary drops the debug-log pointer', !str_contains($sum9, 'complete log') && !str_contains($sum9, '_logs'));
+
+$npm10 = "npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/nope\n"
+    . "npm error A complete log of this run can be found in: /root/.npm/_logs/y-debug-0.log\n";
+$sum10 = DefuddleManager::summarizeNpmError($npm10);
+ok('npm 10 summary keeps the cause', str_contains($sum10, '404 Not Found'));
+ok('npm 10 summary strips "npm error" prefixes', !str_contains($sum10, 'npm error'));
+ok('summary is bounded in length', strlen(DefuddleManager::summarizeNpmError(str_repeat("npm ERR! x\n", 500))) <= 400);
+ok('empty stderr gives a generic summary', DefuddleManager::summarizeNpmError('') !== '');
+
+// ---------------------------------------------------------------------------
+// VersionRequirements
+// ---------------------------------------------------------------------------
+section('VersionRequirements');
+
+ok('parse obscura --version output', VersionRequirements::parse('obscura 0.2.4') === '0.2.4');
+ok('parse dev build version', VersionRequirements::parse('obscura 0.1.0-dev+abc123') === '0.1.0');
+ok('parse plain semver', VersionRequirements::parse('0.19.5') === '0.19.5');
+ok('parse garbage returns null', VersionRequirements::parse('Obscura - A lightweight headless browser') === null);
+ok('parse null returns null', VersionRequirements::parse(null) === null);
+ok('equal version meets minimum', VersionRequirements::meets('0.2.4', '0.2.4'));
+ok('newer version meets minimum', VersionRequirements::meets('0.10.0', '0.2.4'));
+ok('older version does not meet minimum', !VersionRequirements::meets('0.2.3', '0.2.4'));
+ok('unknown version does not meet minimum', !VersionRequirements::meets(null, '0.2.4'));
+
+// The declared minimums must be exactly the versions the suites test.
+$compose = (string) file_get_contents(__DIR__ . '/../tests/integration/docker-compose.test.yml');
+preg_match('/DEFUDDLE_VERSION: "([^"]+)"/', $compose, $dm1);
+preg_match('/OBSCURA_VERSION: "v?([^"]+)"/', $compose, $om1);
+ok('DEFUDDLE_MIN equals the version pinned by the integration suite',
+    ($dm1[1] ?? null) === VersionRequirements::DEFUDDLE_MIN);
+ok('OBSCURA_MIN equals the version pinned by the integration suite',
+    ($om1[1] ?? null) === VersionRequirements::OBSCURA_MIN);
+
+$verStub = sys_get_temp_dir() . '/ftc_ver_' . getmypid();
+file_put_contents($verStub, "#!/bin/sh\n[ \"$1\" = --version ] && echo 'obscura 0.1.9'\n");
+chmod($verStub, 0755);
+ok('BinaryResolver::probeVersion reads --version', BinaryResolver::probeVersion($verStub) === 'obscura 0.1.9');
+ok('BinaryResolver::probeVersion null for missing binary', BinaryResolver::probeVersion($verStub . '-missing') === null);
+@unlink($verStub);
 
 // ---------------------------------------------------------------------------
 // Summary
