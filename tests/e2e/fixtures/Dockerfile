@@ -8,10 +8,11 @@ ENV OBSCURA_VERSION=${OBSCURA_VERSION}
 RUN python3 - <<'PY'
 import os, platform, urllib.request
 arch = {"x86_64": "x86_64-linux", "aarch64": "aarch64-linux"}[platform.machine()]
-name = f"obscura-{arch}.tar.gz"
-url = f"https://github.com/h4ckf0r0day/obscura/releases/download/{os.environ['OBSCURA_VERSION']}/{name}"
 os.makedirs("/srv/obscura", exist_ok=True)
-urllib.request.urlretrieve(url, f"/srv/obscura/{name}")
+for variant in ("", "-stealth"):
+    name = f"obscura-{arch}{variant}.tar.gz"
+    url = f"https://github.com/h4ckf0r0day/obscura/releases/download/{os.environ['OBSCURA_VERSION']}/{name}"
+    urllib.request.urlretrieve(url, f"/srv/obscura/{name}")
 
 # A stub "obscura" that reports an unsupported old version, to exercise the
 # minimum-version warning on the configure page.

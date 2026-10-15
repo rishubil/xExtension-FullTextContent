@@ -257,6 +257,7 @@ Minz_Request::_params([
     'defuddle_check_interval' => '72',
     'fetch_timeout'           => '45',
     'allow_private_network'   => '1',
+    'obscura_stealth_build'   => '1',
 ]);
 $ext->handleConfigureAction();
 
@@ -274,6 +275,10 @@ ok('global fetch_timeout saved',
     $ext->getUserConfigurationInt('fetch_timeout') === 45);
 ok('global allow_private_network saved',
     $ext->getUserConfigurationBool('allow_private_network') === true);
+ok('global obscura_stealth_build saved',
+    $ext->getUserConfigurationBool('obscura_stealth_build') === true);
+ok('buildBinaryResolver() wants the stealth build when enabled',
+    $ext->buildBinaryResolver()->wantedBuild() === 'stealth');
 
 // ---------------------------------------------------------------------------
 section('handleConfigureAction: save_feeds persists per-feed settings without touching globals');
@@ -347,6 +352,10 @@ ok('global fetch_timeout updated',
 // An unchecked checkbox is absent from the POST and must save false.
 ok('global allow_private_network cleared when unchecked',
     $ext->getUserConfigurationBool('allow_private_network') === false);
+ok('global obscura_stealth_build cleared when unchecked',
+    $ext->getUserConfigurationBool('obscura_stealth_build') === false);
+ok('buildBinaryResolver() wants the standard build when disabled',
+    $ext->buildBinaryResolver()->wantedBuild() === 'standard');
 
 // REGRESSION (the bug this fixes): a global-only save must NOT disable or wipe
 // per-feed settings just because the POST lacks the per-feed fields.

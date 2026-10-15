@@ -20,16 +20,18 @@ export interface GlobalSettings {
   defuddle_check_interval: string;
   fetch_timeout: string;
   allow_private_network: boolean;
+  obscura_stealth_build: boolean;
 }
 
 export const DEFAULT_GLOBALS: GlobalSettings = {
   node_binary: 'node',
-  obscura_download_url: `${FIXTURES_INTERNAL_URL}/obscura/obscura-{arch}.tar.gz`,
+  obscura_download_url: `${FIXTURES_INTERNAL_URL}/obscura/obscura-{arch}{variant}.tar.gz`,
   obscura_binary: '',
   defuddle_version: DEFUDDLE_VERSION,
   defuddle_check_interval: '168',
   fetch_timeout: '60',
   allow_private_network: true,
+  obscura_stealth_build: false,
 };
 
 export interface FeedOptions {
@@ -126,6 +128,7 @@ export async function saveGlobals(page: Page, values: Partial<GlobalSettings> = 
     await form.locator(`#${key}`).fill(settings[key]);
   }
   await form.locator('#allow_private_network').setChecked(settings.allow_private_network);
+  await form.locator('#obscura_stealth_build').setChecked(settings.obscura_stealth_build);
   await submitConfigure(page, form.getByRole('button', { name: 'Save' }));
 }
 

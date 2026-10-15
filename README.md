@@ -103,12 +103,13 @@ Open **Administration → Extensions → Full Text Content → Configure**.
 | Field | Default | Description |
 |---|---|---|
 | Node.js binary path | `node` | Path to the `node` executable inside the container. |
-| Obscura download URL template | upstream GitHub URL | Template for downloading the obscura binary. `{arch}` is replaced with the host architecture (e.g. `x86_64-linux`). |
+| Obscura download URL template | upstream GitHub URL | Template for downloading the obscura binary. `{arch}` is replaced with the host architecture (e.g. `x86_64-linux`) and `{variant}` with `-stealth` or nothing, depending on **Use the obscura stealth build**. |
 | Obscura binary path override | *(auto)* | Override the resolved binary path. Leave blank to use the auto-downloaded binary. |
 | Defuddle version | `latest` | `latest` always upgrades to the newest npm release. Any other value (e.g. `0.6.2`) pins to that exact version. |
 | Defuddle update check interval | `168` hours | How often to check for a newer defuddle version when set to `latest`. Ignored when pinned. |
 | Fetch timeout | `30` seconds | Maximum time allowed for obscura to fetch and render a URL. |
 | Allow private network access | off | Passes `--allow-private-network` to obscura so it can fetch articles hosted on loopback, RFC 1918 or link-local addresses (e.g. a self-hosted site on your LAN). obscura 0.2+ blocks these by default as an SSRF guard. When enabled it applies to every fetch, including resources the article page loads. |
+| Use the obscura stealth build | off | Downloads obscura's stealth build instead of the standard one. See [Stealth](#stealth) below. Changing it replaces the binary on the next fetch (or immediately via **Redownload obscura binary**). |
 
 > **Local feeds on FreshRSS 1.30+:** FreshRSS itself also blocks feeds on private networks unless they are listed in *Administration → System configuration → Internal host allowlist* (or the `INTERNAL_HOST_ALLOWLIST` environment variable). Full-text fetching of such articles additionally needs **Allow private network access** above.
 
@@ -118,6 +119,17 @@ Open **Administration → Extensions → Full Text Content → Configure**.
 - **Redownload obscura binary** — forces a fresh download of the obscura binary using the configured URL.
 
 Saving and both actions show a confirmation, or the error (e.g. `HTTP 404` from the download URL, or npm's reason) when they fail. The status table reports the obscura binary actually in use (the override when set) and warns about versions below the supported minimum.
+
+### Stealth
+
+obscura's `--stealth` flag (the per-feed **Stealth** option) behaves differently depending on the build:
+
+| Build | Per-feed Stealth does |
+|---|---|
+| standard (default) | masks the browser fingerprint only (randomised GPU/canvas/audio/screen values, `navigator.webdriver` hidden, Chrome-like `userAgentData`) |
+| stealth | the above **plus** Chrome TLS fingerprint impersonation and blocking of ~3,500 tracker domains |
+
+Most article pages do not need any of this: obscura is mainly used to render JavaScript. Stealth only matters for sites behind bot protection, which frequently rejects non-browser TLS fingerprints before any JavaScript runs — that part requires the stealth build. Both builds report the same `--version`, so the extension records which one it downloaded; the configure page shows it and warns when feeds use Stealth with the standard build. Bypassing bot protection may conflict with a site's terms of use.
 
 ### Per-feed opt-in
 

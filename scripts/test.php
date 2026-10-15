@@ -203,6 +203,40 @@ if ($hostArch === null) {
             substr_count($e->getMessage(), $failUrl) === 1);
     }
 
+    // Stealth build variant: {variant} expands to "-stealth" and the
+    // installed build is recorded so a change of setting triggers a download.
+    @mkdir($dlBase . '/std', 0755, true);
+    @mkdir($dlBase . '/st', 0755, true);
+    file_put_contents($dlBase . '/std/obscura', "#!/bin/sh\necho standard-build " . str_repeat('x', 300) . "\n");
+    file_put_contents($dlBase . '/st/obscura', "#!/bin/sh\necho stealth-build " . str_repeat('x', 300) . "\n");
+    ProcRunner::run(['tar', 'czf', $dlBase . '/variant-' . $hostArch . '.tar.gz', '-C', $dlBase . '/std', 'obscura']);
+    ProcRunner::run(['tar', 'czf', $dlBase . '/variant-' . $hostArch . '-stealth.tar.gz', '-C', $dlBase . '/st', 'obscura']);
+    $variantUrl = 'file://' . $dlBase . '/variant-{arch}{variant}.tar.gz';
+
+    $stdResolver = new BinaryResolver($dlBase . '/vdata', $variantUrl, false);
+    $vPath = $stdResolver->ensure();
+    ok('standard build downloaded when stealth build is off',
+        str_contains(ProcRunner::run([$vPath])['stdout'], 'standard-build'));
+    ok('installedBuild() reports standard', $stdResolver->installedBuild() === 'standard');
+
+    $stResolver = new BinaryResolver($dlBase . '/vdata', $variantUrl, true);
+    ok('wantedBuild() reports stealth', $stResolver->wantedBuild() === 'stealth');
+    $stResolver->ensure();
+    ok('switching to the stealth build re-downloads without force',
+        str_contains(ProcRunner::run([$vPath])['stdout'], 'stealth-build'));
+    ok('installedBuild() reports stealth after switching', $stResolver->installedBuild() === 'stealth');
+
+    // A binary installed before builds were recorded counts as standard.
+    @unlink($dlBase . '/vdata/bin/.build');
+    ok('missing build marker counts as standard', $stResolver->installedBuild() === 'standard');
+    $legacy = new BinaryResolver($dlBase . '/vdata', $variantUrl, false);
+    $legacy->ensure();
+    ok('no re-download for a legacy install when standard is wanted',
+        str_contains(ProcRunner::run([$vPath])['stdout'], 'stealth-build'));
+
+    ok('default download URL has a {variant} placeholder',
+        str_contains((new BinaryResolver($dlBase))->defaultDownloadUrl(), '{arch}{variant}.tar.gz'));
+
     ProcRunner::run(['rm', '-rf', $dlBase]);
 }
 

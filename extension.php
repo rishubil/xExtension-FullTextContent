@@ -177,6 +177,7 @@ final class FullTextContentExtension extends Minz_Extension {
 		$this->setUserConfigurationValue('defuddle_check_interval', (int) Minz_Request::paramString('defuddle_check_interval'));
 		$this->setUserConfigurationValue('fetch_timeout', (int) Minz_Request::paramString('fetch_timeout'));
 		$this->setUserConfigurationValue('allow_private_network', Minz_Request::paramBoolean('allow_private_network'));
+		$this->setUserConfigurationValue('obscura_stealth_build', Minz_Request::paramBoolean('obscura_stealth_build'));
 	}
 
 	private function saveFeedSettings(): void {
@@ -225,7 +226,8 @@ final class FullTextContentExtension extends Minz_Extension {
 	public function buildBinaryResolver(): BinaryResolver {
 		return new BinaryResolver(
 			$this->getExtDataDir(),
-			$this->getUserConfigurationString('obscura_download_url') ?? ''
+			$this->getUserConfigurationString('obscura_download_url') ?? '',
+			$this->getUserConfigurationBool('obscura_stealth_build') ?? false
 		);
 	}
 

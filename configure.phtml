@@ -16,6 +16,10 @@ $defuddleVersion      = $this->getUserConfigurationString('defuddle_version') ??
 $checkInterval        = $this->getUserConfigurationInt('defuddle_check_interval') ?? 168;
 $fetchTimeout         = $this->getUserConfigurationInt('fetch_timeout') ?? 30;
 $allowPrivateNetwork  = $this->getUserConfigurationBool('allow_private_network') ?? false;
+$obscuraStealthBuild  = $this->getUserConfigurationBool('obscura_stealth_build') ?? false;
+
+$feedDao   = FreshRSS_Factory::createFeedDao();
+$allFeeds  = $feedDao->listFeeds();
 
 // The binary the pipeline actually runs: the override when set, else the download.
 $obscuraEffectivePath = $obscuraBinaryOverride !== '' ? $obscuraBinaryOverride : $obscuraBinPath;
@@ -31,13 +35,32 @@ if ($installedDefuddle !== null && !VersionRequirements::meets($installedDefuddl
 	$versionWarnings[] = _t('ext.fulltextcontent.config.warn_defuddle_installed_old',
 		$installedDefuddle, VersionRequirements::DEFUDDLE_MIN);
 }
+// Build selection (standard / stealth) only applies to the downloaded binary.
+$installedBuild = $obscuraBinaryOverride === '' ? $binaryResolver->installedBuild() : null;
+$buildWarnings = [];
+if ($obscuraBinaryOverride === '' && $obscuraStealthBuild && !$binaryResolver->canSelectBuild()) {
+	$buildWarnings[] = _t('ext.fulltextcontent.config.warn_build_no_variant');
+} elseif ($installedBuild !== null && $installedBuild !== $binaryResolver->wantedBuild()) {
+	$buildWarnings[] = _t('ext.fulltextcontent.config.warn_build_mismatch',
+		_t('ext.fulltextcontent.config.build_' . $installedBuild),
+		_t('ext.fulltextcontent.config.build_' . $binaryResolver->wantedBuild()));
+}
+$stealthFeedCount = 0;
+foreach ($allFeeds as $feed) {
+	if ($feed->attributeBoolean('fulltextcontent_stealth')) {
+		$stealthFeedCount++;
+	}
+}
+$standardBuildInUse = $obscuraBinaryOverride === '' && ($installedBuild ?? $binaryResolver->wantedBuild()) === 'standard';
+$stealthWarning = $stealthFeedCount > 0 && $standardBuildInUse
+	? _t('ext.fulltextcontent.config.warn_stealth_standard_build', $stealthFeedCount)
+	: null;
+
 if ($defuddleVersion !== 'latest' && !VersionRequirements::meets($defuddleVersion, VersionRequirements::DEFUDDLE_MIN)) {
 	$versionWarnings[] = _t('ext.fulltextcontent.config.warn_defuddle_pinned_old',
 		$defuddleVersion, VersionRequirements::DEFUDDLE_MIN);
 }
 
-$feedDao   = FreshRSS_Factory::createFeedDao();
-$allFeeds  = $feedDao->listFeeds();
 $categories = [];
 foreach ($allFeeds as $feed) {
 	$catName = $feed->category() ? $feed->category()->name() : _t('gen.short.without_category');
@@ -112,6 +135,15 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.allow_private_network_help'); ?></p>
 			</div>
 
+			<div class="form-group">
+				<label for="obscura_stealth_build">
+					<input type="checkbox" id="obscura_stealth_build" name="obscura_stealth_build" value="1"
+						<?php echo $obscuraStealthBuild ? 'checked' : ''; ?> />
+					<?php echo _t('ext.fulltextcontent.config.obscura_stealth_build'); ?>
+				</label>
+				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.obscura_stealth_build_help'); ?></p>
+			</div>
+
 			<button type="submit" class="btn btn-primary">
 				<?php echo _t('ext.fulltextcontent.config.save'); ?>
 			</button>
@@ -127,6 +159,12 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 		<?php foreach ($versionWarnings as $warning): ?>
 			<p class="alert alert-warn ftc-version-warning"><?php echo htmlspecialchars($warning, ENT_QUOTES); ?></p>
 		<?php endforeach; ?>
+		<?php foreach ($buildWarnings as $warning): ?>
+			<p class="alert alert-warn ftc-build-warning"><?php echo htmlspecialchars($warning, ENT_QUOTES); ?></p>
+		<?php endforeach; ?>
+		<?php if ($stealthWarning !== null): ?>
+			<p class="alert alert-warn ftc-stealth-warning"><?php echo htmlspecialchars($stealthWarning, ENT_QUOTES); ?></p>
+		<?php endif; ?>
 
 		<div class="ftc-table-scroll">
 		<table class="table">
@@ -140,6 +178,18 @@ $waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
 							<em><?php echo _t('ext.fulltextcontent.config.obscura_not_downloaded'); ?></em>
 						<?php endif; ?>
 					</td>
+				</tr>
+				<tr>
+					<th><?php echo _t('ext.fulltextcontent.config.obscura_build'); ?></th>
+					<td><?php
+						if ($obscuraBinaryOverride !== '') {
+							echo '<em>' . _t('ext.fulltextcontent.config.build_override') . '</em>';
+						} elseif ($installedBuild !== null) {
+							echo _t('ext.fulltextcontent.config.build_' . $installedBuild);
+						} else {
+							echo '<em>' . _t('ext.fulltextcontent.config.obscura_not_downloaded') . '</em>';
+						}
+					?></td>
 				</tr>
 				<tr>
 					<th><?php echo _t('ext.fulltextcontent.config.obscura_version'); ?></th>
