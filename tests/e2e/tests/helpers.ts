@@ -111,6 +111,12 @@ export async function gotoConfigure(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Global Settings' })).toBeVisible();
 }
 
+/** Opens the configure page without relying on English headings. */
+export async function gotoConfigureAnyLanguage(page: Page): Promise<void> {
+  await page.goto(CONFIGURE_URL);
+  await expect(page.locator('.ftc-configure')).toBeVisible();
+}
+
 function globalForm(page: Page): Locator {
   return page.locator('form').filter({ has: page.locator('input[name="fulltextcontent_action"][value="save_global"]') });
 }
@@ -123,6 +129,7 @@ export async function saveGlobals(page: Page, values: Partial<GlobalSettings> = 
   const settings = { ...DEFAULT_GLOBALS, ...values };
   await gotoConfigure(page);
   const form = globalForm(page);
+  await openDetails(form.locator('details.ftc-advanced'));
   for (const key of ['node_binary', 'obscura_download_url', 'obscura_binary', 'defuddle_version',
     'defuddle_check_interval', 'fetch_timeout'] as const) {
     await form.locator(`#${key}`).fill(settings[key]);
@@ -132,17 +139,56 @@ export async function saveGlobals(page: Page, values: Partial<GlobalSettings> = 
   await submitConfigure(page, form.getByRole('button', { name: 'Save' }));
 }
 
+/** The list item of a feed in the per-feed settings form. */
+export function feedItem(page: Page, feedId: string): Locator {
+  return page.locator(`.ftc-feed[data-feed-id="${feedId}"]`);
+}
+
+/** Opens a <details> element and every <details> it is nested in. */
+async function openDetails(details: Locator): Promise<void> {
+  await details.evaluate((el) => {
+    for (let d: Element | null = el; d; d = d.parentElement?.closest('details') ?? null) {
+      (d as HTMLDetailsElement).open = true;
+    }
+  });
+}
+
+/** Expands the fetch options panel of a feed list item. */
+export async function openFeedOptions(item: Locator): Promise<void> {
+  await openDetails(item.locator('details.ftc-feed-options'));
+}
+
+/** Ticks a feed in the form (moving it to the enabled feeds) without saving. */
+export async function enableInForm(page: Page, feedId: string): Promise<void> {
+  const box = page.locator(`#feed_${feedId}`);
+  if (!(await box.isChecked())) {
+    await openDetails(page.locator('details.ftc-add-panel'));
+    await box.check();
+  }
+  await expect(page.locator('.ftc-enabled-list').locator(`#feed_${feedId}`)).toBeChecked();
+}
+
 export async function setFeedOptions(page: Page, feedId: string, options: FeedOptions): Promise<void> {
   await gotoConfigure(page);
   const form = feedForm(page);
-  const row = form.locator('tr').filter({ has: page.locator(`#feed_${feedId}`) });
-  await row.locator(`#feed_${feedId}`).setChecked(options.enabled ?? true);
-  await row.locator(`input[name="fulltextcontent_wait[${feedId}]"]`).fill(options.wait ?? '');
-  await row.locator(`select[name="fulltextcontent_wait_until[${feedId}]"]`).selectOption(options.waitUntil ?? '');
-  await row.locator(`input[name="fulltextcontent_selector[${feedId}]"]`).fill(options.selector ?? '');
-  await row.locator('input[name="fulltextcontent_stealth[]"]').setChecked(options.stealth ?? false);
-  await row.locator(`input[name="fulltextcontent_timeout[${feedId}]"]`).fill(options.timeout ?? '');
-  await submitConfigure(page, form.getByRole('button', { name: 'Save' }));
+  if (options.enabled === false) {
+    // Disabled feeds keep their stored options; only the checkbox changes.
+    // Feeds that are not enabled yet sit in the collapsed "Add feeds" picker.
+    if (await page.locator('.ftc-add-list').locator(`#feed_${feedId}`).count() > 0) {
+      await openDetails(page.locator('details.ftc-add-panel'));
+    }
+    await page.locator(`#feed_${feedId}`).setChecked(false);
+  } else {
+    await enableInForm(page, feedId);
+    const item = feedItem(page, feedId);
+    await openFeedOptions(item);
+    await item.locator(`input[name="fulltextcontent_wait[${feedId}]"]`).fill(options.wait ?? '');
+    await item.locator(`select[name="fulltextcontent_wait_until[${feedId}]"]`).selectOption(options.waitUntil ?? '');
+    await item.locator(`input[name="fulltextcontent_selector[${feedId}]"]`).fill(options.selector ?? '');
+    await item.locator('input[name="fulltextcontent_stealth[]"]').setChecked(options.stealth ?? false);
+    await item.locator(`input[name="fulltextcontent_timeout[${feedId}]"]`).fill(options.timeout ?? '');
+  }
+  await submitConfigure(page, form.getByRole('button', { name: 'Save feed settings' }));
 }
 
 /** Creates a feed with full-text enabled (or not), publishes one item, refreshes. */

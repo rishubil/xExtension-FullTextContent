@@ -8,6 +8,7 @@ import {
 test('configure page shows global settings, status and per-feed sections', async ({ page }) => {
   await gotoConfigure(page);
   await expect(page.getByRole('heading', { name: /Full Text Content \(.+\) — Enabled/ })).toBeVisible();
+  await page.locator('.ftc-advanced > summary').click();
   for (const label of ['Node.js binary path', 'Obscura download URL template', 'Obscura binary path override',
     'Defuddle version', 'Defuddle update check interval (hours)', 'Fetch timeout (seconds)',
     'Allow private network access']) {
@@ -16,7 +17,7 @@ test('configure page shows global settings, status and per-feed sections', async
   await expect(page.getByRole('heading', { name: 'Status & Actions' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Update defuddle now' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Redownload obscura binary' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Per-feed Settings' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Feeds', exact: true })).toBeVisible();
 });
 
 test('global settings persist across reloads', async ({ page }) => {
@@ -59,7 +60,7 @@ test('per-feed settings persist and saving them leaves global settings intact', 
   await expect(form.locator(`input[name="fulltextcontent_wait[${feedId}]"]`)).toHaveValue('2');
   await expect(form.locator(`select[name="fulltextcontent_wait_until[${feedId}]"]`)).toHaveValue('networkidle0');
   await expect(form.locator(`input[name="fulltextcontent_selector[${feedId}]"]`)).toHaveValue('#main');
-  await expect(form.locator(`tr:has(#feed_${feedId}) input[name="fulltextcontent_stealth[]"]`)).toBeChecked();
+  await expect(form.locator(`#ftc_stealth_${feedId}`)).toBeChecked();
   await expect(form.locator(`input[name="fulltextcontent_timeout[${feedId}]"]`)).toHaveValue('25');
 
   // Regression: the per-feed form must not wipe the global settings.
@@ -74,11 +75,11 @@ test('per-feed settings persist and saving them leaves global settings intact', 
   await expect(feedForm(page).locator(`#feed_${feedId}`)).toBeChecked();
   await expect(feedForm(page).locator(`input[name="fulltextcontent_selector[${feedId}]"]`)).toHaveValue('#main');
 
-  // Clearing the options disables the feed again.
+  // Disabling keeps the options, so re-enabling the feed restores them.
   await setFeedOptions(page, feedId, { enabled: false });
   await page.goto(CONFIGURE_URL);
   await expect(feedForm(page).locator(`#feed_${feedId}`)).not.toBeChecked();
-  await expect(feedForm(page).locator(`input[name="fulltextcontent_selector[${feedId}]"]`)).toHaveValue('');
+  await expect(feedForm(page).locator(`input[name="fulltextcontent_selector[${feedId}]"]`)).toHaveValue('#main');
 });
 
 test('"Update defuddle now" installs the configured defuddle version', async ({ page }) => {
@@ -183,6 +184,13 @@ test.describe('minimum supported versions', () => {
     await expect(warnings(page)).toContainText('obscura 0.1.0');
   });
 
+  test('an empty defuddle version means latest and is not flagged', async ({ page }) => {
+    await saveGlobals(page, { defuddle_version: '' });
+    await page.goto(CONFIGURE_URL);
+    await expect(page.locator('#defuddle_version')).toHaveValue('latest');
+    await expect(warnings(page)).toHaveCount(0);
+  });
+
   test('a defuddle pinned or installed below the minimum is flagged', async ({ page }) => {
     await saveGlobals(page, { defuddle_version: '0.19.4' });
     await page.goto(CONFIGURE_URL);
@@ -205,8 +213,7 @@ test('the configure page does not overflow horizontally at phone width', async (
   await gotoConfigure(page);
   const widths = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
   expect(widths[0]).toBeLessThanOrEqual(widths[1]);
-  // The wide per-feed table scrolls inside its own container instead.
-  const lastStealth = feedForm(page).locator('input[name="fulltextcontent_stealth[]"]').last();
-  await lastStealth.scrollIntoViewIfNeeded();
-  await expect(lastStealth).toBeInViewport();
+  // The feed save button stays reachable while scrolling through the list.
+  await feedForm(page).locator('.ftc-feed').first().scrollIntoViewIfNeeded();
+  await expect(feedForm(page).getByRole('button', { name: 'Save feed settings' })).toBeInViewport();
 });

@@ -450,6 +450,14 @@ ok('equal version meets minimum', VersionRequirements::meets('0.2.4', '0.2.4'));
 ok('newer version meets minimum', VersionRequirements::meets('0.10.0', '0.2.4'));
 ok('older version does not meet minimum', !VersionRequirements::meets('0.2.3', '0.2.4'));
 ok('unknown version does not meet minimum', !VersionRequirements::meets(null, '0.2.4'));
+ok('older pinned version is older', VersionRequirements::isOlder('0.19.4', '0.19.5'));
+ok('equal pinned version is not older', !VersionRequirements::isOlder('0.19.5', '0.19.5'));
+ok('"latest" is not older', !VersionRequirements::isOlder('latest', '0.19.5'));
+ok('empty version is not older', !VersionRequirements::isOlder('', '0.19.5'));
+ok('unparseable npm range is not older', !VersionRequirements::isOlder('^0.19', '0.19.5'));
+ok('configured version: empty means latest', (new DefuddleManager(sys_get_temp_dir(), ''))->configuredVersion() === 'latest');
+ok('configured version: blank means latest', (new DefuddleManager(sys_get_temp_dir(), '  '))->configuredVersion() === 'latest');
+ok('configured version is trimmed', (new DefuddleManager(sys_get_temp_dir(), ' 0.19.5 '))->configuredVersion() === '0.19.5');
 
 // The declared minimums must be exactly the versions the suites test.
 $compose = (string) file_get_contents(__DIR__ . '/../tests/integration/docker-compose.test.yml');
@@ -466,6 +474,45 @@ chmod($verStub, 0755);
 ok('BinaryResolver::probeVersion reads --version', BinaryResolver::probeVersion($verStub) === 'obscura 0.1.9');
 ok('BinaryResolver::probeVersion null for missing binary', BinaryResolver::probeVersion($verStub . '-missing') === null);
 @unlink($verStub);
+
+// ---------------------------------------------------------------------------
+// Translations
+// ---------------------------------------------------------------------------
+section('Translations');
+
+/** @return array<string,string> dotted key => string */
+function flattenStrings(array $tree, string $prefix = ''): array {
+    $out = [];
+    foreach ($tree as $key => $value) {
+        $path = $prefix === '' ? (string) $key : $prefix . '.' . $key;
+        if (is_array($value)) {
+            $out += flattenStrings($value, $path);
+        } else {
+            $out[$path] = (string) $value;
+        }
+    }
+    return $out;
+}
+
+$en = flattenStrings(require __DIR__ . '/../i18n/en/ext.php');
+$koFile = __DIR__ . '/../i18n/ko/ext.php';
+ok('Korean translation exists', is_file($koFile));
+$ko = is_file($koFile) ? flattenStrings(require $koFile) : [];
+ok('Korean translation has every English key', array_diff_key($en, $ko) === []);
+ok('Korean translation has no extra keys', array_diff_key($ko, $en) === []);
+$placeholderMismatch = [];
+foreach ($en as $key => $text) {
+    preg_match_all('/%(?:\d+\$)?[sd]/', $text, $a);
+    preg_match_all('/%(?:\d+\$)?[sd]/', $ko[$key] ?? '', $b);
+    $norm = static fn(array $m): array => array_map(static fn($p) => substr($p, -1), $m[0]);
+    if (count($a[0]) !== count($b[0]) || array_count_values($norm($a)) != array_count_values($norm($b))) {
+        $placeholderMismatch[] = $key;
+    }
+}
+ok('Korean strings keep the format placeholders (' . implode(', ', $placeholderMismatch) . ')', $placeholderMismatch === []);
+$untranslated = array_keys(array_filter($ko, static fn($v, $k) => $v === $en[$k] && preg_match('/[a-z]{4,}/', $v) === 1
+    && !in_array($k, ['fulltextcontent.title'], true), ARRAY_FILTER_USE_BOTH));
+ok('Korean strings are translated (' . implode(', ', array_slice($untranslated, 0, 5)) . ')', $untranslated === []);
 
 // ---------------------------------------------------------------------------
 // Summary

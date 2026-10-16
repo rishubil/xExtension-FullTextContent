@@ -26,4 +26,13 @@ final class VersionRequirements {
 		$parsed = self::parse($version);
 		return $parsed !== null && version_compare($parsed, $minimum, '>=');
 	}
+
+	/**
+	 * True only when $version names a version below $minimum. Values that are
+	 * not a plain version ("latest", npm ranges, empty) are not flagged.
+	 */
+	public static function isOlder(?string $version, string $minimum): bool {
+		$parsed = self::parse($version);
+		return $parsed !== null && version_compare($parsed, $minimum, '<');
+	}
 }

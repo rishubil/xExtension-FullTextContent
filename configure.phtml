@@ -12,7 +12,7 @@ $obscuraBinPath     = $binaryResolver->binaryPath();
 $nodeBinary           = $this->getUserConfigurationString('node_binary') ?? 'node';
 $obscuraDownloadUrl   = $this->getUserConfigurationString('obscura_download_url') ?? '';
 $obscuraBinaryOverride = $this->getUserConfigurationString('obscura_binary') ?? '';
-$defuddleVersion      = $this->getUserConfigurationString('defuddle_version') ?? 'latest';
+$defuddleVersion      = $defuddleManager->configuredVersion();
 $checkInterval        = $this->getUserConfigurationInt('defuddle_check_interval') ?? 168;
 $fetchTimeout         = $this->getUserConfigurationInt('fetch_timeout') ?? 30;
 $allowPrivateNetwork  = $this->getUserConfigurationBool('allow_private_network') ?? false;
@@ -56,10 +56,11 @@ $stealthWarning = $stealthFeedCount > 0 && $standardBuildInUse
 	? _t('ext.fulltextcontent.config.warn_stealth_standard_build', $stealthFeedCount)
 	: null;
 
-if ($defuddleVersion !== 'latest' && !VersionRequirements::meets($defuddleVersion, VersionRequirements::DEFUDDLE_MIN)) {
+if (VersionRequirements::isOlder($defuddleVersion, VersionRequirements::DEFUDDLE_MIN)) {
 	$versionWarnings[] = _t('ext.fulltextcontent.config.warn_defuddle_pinned_old',
 		$defuddleVersion, VersionRequirements::DEFUDDLE_MIN);
 }
+
 
 $categories = [];
 foreach ($allFeeds as $feed) {
@@ -68,270 +69,362 @@ foreach ($allFeeds as $feed) {
 }
 ksort($categories);
 
-$waitUntilOptions = ['load', 'domcontentloaded', 'networkidle0'];
+$esc = static fn($value): string => htmlspecialchars((string) $value, ENT_QUOTES);
+$t   = static fn(string $key, ...$args): string => _t('ext.fulltextcontent.config.' . $key, ...$args);
+
+// "" is obscura's default (load); the others are offered with what they mean.
+$waitUntilOptions = [
+	''                 => $t('wait_until_load'),
+	'domcontentloaded' => $t('wait_until_domcontentloaded'),
+	'networkidle0'     => $t('wait_until_networkidle0'),
+];
+$summaryStrings = [
+	'default'                => $t('summary_default'),
+	'selector'               => $t('summary_selector'),
+	'wait'                   => $t('summary_wait'),
+	'timeout'                => $t('summary_timeout'),
+	'stealth'                => $t('summary_stealth'),
+	'wait_until_domcontentloaded' => $t('summary_wait_until_domcontentloaded'),
+	'wait_until_networkidle0'     => $t('summary_wait_until_networkidle0'),
+];
+$jsStrings = $summaryStrings + [
+	'test_running' => $t('test_running'),
+	'test_ok'      => $t('test_ok'),
+	'test_failed'  => $t('test_failed'),
+];
+
+/** Short description of the options a feed overrides (mirrored in script.js). */
+$summarize = static function (int $wait, string $waitUntil, string $selector, bool $stealth, int $timeout) use ($summaryStrings): string {
+	$parts = [];
+	if ($selector !== '') {
+		$parts[] = sprintf($summaryStrings['selector'], $selector);
+	}
+	if ($wait > 0) {
+		$parts[] = sprintf($summaryStrings['wait'], $wait);
+	}
+	if (isset($summaryStrings['wait_until_' . $waitUntil])) {
+		$parts[] = $summaryStrings['wait_until_' . $waitUntil];
+	}
+	if ($timeout > 0) {
+		$parts[] = sprintf($summaryStrings['timeout'], $timeout);
+	}
+	if ($stealth) {
+		$parts[] = $summaryStrings['stealth'];
+	}
+	return $parts === [] ? $summaryStrings['default'] : implode(' · ', $parts);
+};
+
+// Usually only a few feeds need full text: list those first and keep the
+// others, grouped by category, in a collapsible picker.
+$enabledFeeds = [];
+$otherFeeds = [];
+foreach ($categories as $catName => $feeds) {
+	foreach ($feeds as $feed) {
+		if ($feed->attributeBoolean('fulltextcontent_enabled')) {
+			$enabledFeeds[] = $feed;
+		} else {
+			$otherFeeds[$catName][] = $feed;
+		}
+	}
+}
+
+/** Renders one feed list item; used for both the enabled and the other feeds. */
+$renderFeed = static function (FreshRSS_Feed $feed) use ($esc, $t, $summarize, $waitUntilOptions, $fetchTimeout): void {
+	$fid       = (int) $feed->id();
+	$enabled   = (bool) $feed->attributeBoolean('fulltextcontent_enabled');
+	$wait      = (int) ($feed->attributeInt('fulltextcontent_wait') ?? 0);
+	$waitUntil = (string) ($feed->attributeString('fulltextcontent_wait_until') ?? '');
+	$selector  = (string) ($feed->attributeString('fulltextcontent_selector') ?? '');
+	$stealth   = (bool) ($feed->attributeBoolean('fulltextcontent_stealth') ?? false);
+	$timeout   = (int) ($feed->attributeInt('fulltextcontent_timeout') ?? 0);
+	$website   = $feed->website();
+	?>
+	<li class="ftc-feed<?= $enabled ? ' ftc-enabled' : '' ?>" data-feed-id="<?= $fid ?>">
+		<div class="ftc-feed-head">
+			<label class="ftc-feed-toggle" for="feed_<?= $fid ?>">
+				<input type="checkbox" class="ftc-feed-enabled"
+					name="fulltextcontent_feeds[]" id="feed_<?= $fid ?>" value="<?= $fid ?>"
+					<?= $enabled ? 'checked' : '' ?> />
+				<img class="favicon" src="<?= $esc($feed->favicon()) ?>" alt="" loading="lazy" />
+				<span class="ftc-feed-name"><?= $feed->name() ?></span>
+			</label>
+			<?php if ($website !== ''): ?>
+				<a class="ftc-feed-site" href="<?= $esc($website) ?>" target="_blank" rel="noreferrer"
+					title="<?= $t('open_website') ?>"><?= $t('open_website') ?> ↗</a>
+			<?php endif; ?>
+		</div>
+		<details class="ftc-feed-options">
+			<summary>
+				<span class="ftc-options-label"><?= $t('fetch_options') ?>:</span>
+				<span class="ftc-feed-summary"><?= $esc($summarize($wait, $waitUntil, $selector, $stealth, $timeout)) ?></span>
+			</summary>
+			<div class="ftc-options-panel">
+				<div class="ftc-option">
+					<label for="ftc_selector_<?= $fid ?>"><?= $t('opt_selector') ?></label>
+					<input type="text" id="ftc_selector_<?= $fid ?>" data-ftc-opt="selector"
+						name="fulltextcontent_selector[<?= $fid ?>]" value="<?= $esc($selector) ?>"
+						placeholder="<?= $t('opt_selector_placeholder') ?>"
+						aria-describedby="ftc_selector_<?= $fid ?>_help" />
+					<p class="ftc-help" id="ftc_selector_<?= $fid ?>_help"><?= $t('opt_selector_help') ?></p>
+				</div>
+				<div class="ftc-option">
+					<label for="ftc_wait_<?= $fid ?>"><?= $t('opt_wait') ?></label>
+					<input type="number" id="ftc_wait_<?= $fid ?>" data-ftc-opt="wait" min="1"
+						name="fulltextcontent_wait[<?= $fid ?>]" value="<?= $wait > 0 ? $wait : '' ?>"
+						placeholder="<?= $t('opt_wait_placeholder') ?>"
+						aria-describedby="ftc_wait_<?= $fid ?>_help" />
+					<p class="ftc-help" id="ftc_wait_<?= $fid ?>_help"><?= $t('opt_wait_help') ?></p>
+				</div>
+				<div class="ftc-option">
+					<label for="ftc_wait_until_<?= $fid ?>"><?= $t('opt_wait_until') ?></label>
+					<select id="ftc_wait_until_<?= $fid ?>" data-ftc-opt="wait_until"
+						name="fulltextcontent_wait_until[<?= $fid ?>]"
+						aria-describedby="ftc_wait_until_<?= $fid ?>_help">
+						<?php foreach ($waitUntilOptions as $value => $label): ?>
+							<option value="<?= $value ?>" <?= $waitUntil === $value ? 'selected' : '' ?>><?= $esc($label) ?></option>
+						<?php endforeach; ?>
+					</select>
+					<p class="ftc-help" id="ftc_wait_until_<?= $fid ?>_help"><?= $t('opt_wait_until_help') ?></p>
+				</div>
+				<div class="ftc-option">
+					<label for="ftc_timeout_<?= $fid ?>"><?= $t('opt_timeout') ?></label>
+					<input type="number" id="ftc_timeout_<?= $fid ?>" data-ftc-opt="timeout" min="1"
+						name="fulltextcontent_timeout[<?= $fid ?>]" value="<?= $timeout > 0 ? $timeout : '' ?>"
+						placeholder="30"
+						aria-describedby="ftc_timeout_<?= $fid ?>_help" />
+					<p class="ftc-help" id="ftc_timeout_<?= $fid ?>_help"><?= $t('opt_timeout_help', $fetchTimeout) ?></p>
+				</div>
+				<div class="ftc-option ftc-option-wide">
+					<label for="ftc_stealth_<?= $fid ?>" class="ftc-checkbox-label">
+						<input type="checkbox" id="ftc_stealth_<?= $fid ?>" data-ftc-opt="stealth"
+							name="fulltextcontent_stealth[]" value="<?= $fid ?>" <?= $stealth ? 'checked' : '' ?>
+							aria-describedby="ftc_stealth_<?= $fid ?>_help" />
+						<?= $t('opt_stealth') ?>
+					</label>
+					<p class="ftc-help" id="ftc_stealth_<?= $fid ?>_help"><?= $t('opt_stealth_help') ?></p>
+				</div>
+			</div>
+			<div class="ftc-test">
+				<p class="ftc-test-title"><?= $t('test_title') ?></p>
+				<div class="ftc-test-controls">
+					<input type="url" class="ftc-test-url" aria-label="<?= $t('test_url') ?>"
+						placeholder="<?= $t('test_url_placeholder') ?>" />
+					<button type="button" class="btn ftc-test-btn"><?= $t('test_button') ?></button>
+				</div>
+				<p class="ftc-help"><?= $t('test_help') ?></p>
+				<div class="ftc-test-result" aria-live="polite" hidden></div>
+			</div>
+		</details>
+	</li>
+	<?php
+};
+
+$configureUrl = _url('extension', 'configure', 'e', urlencode($this->getName()));
+$csrf = FreshRSS_Auth::csrfToken();
 ?>
 
-<div class="extension-configure">
+<div class="extension-configure ftc-configure">
 
-	<form method="post" action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>">
-		<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
+	<?php foreach ($versionWarnings as $warning): ?>
+		<p class="alert alert-warn ftc-version-warning"><?= $esc($warning) ?></p>
+	<?php endforeach; ?>
+	<?php foreach ($buildWarnings as $warning): ?>
+		<p class="alert alert-warn ftc-build-warning"><?= $esc($warning) ?></p>
+	<?php endforeach; ?>
+	<?php if ($stealthWarning !== null): ?>
+		<p class="alert alert-warn ftc-stealth-warning"><?= $esc($stealthWarning) ?></p>
+	<?php endif; ?>
+
+	<section class="ftc-feeds"
+		data-preview-url="<?= _url('fullTextContent', 'preview') ?>"
+		data-csrf="<?= $esc($csrf) ?>"
+		data-strings="<?= $esc(json_encode($jsStrings)) ?>">
+		<h2><?= $t('feeds') ?></h2>
+		<p><?= $t('feeds_help') ?></p>
+
+		<?php if ($allFeeds === []): ?>
+			<p><?= $t('no_feeds') ?></p>
+		<?php else: ?>
+		<form method="post" action="<?= $configureUrl ?>" class="ftc-feed-form">
+			<input type="hidden" name="_csrf" value="<?= $esc($csrf) ?>" />
+			<input type="hidden" name="fulltextcontent_action" value="save_feeds" />
+
+			<h3 class="ftc-enabled-heading">
+				<?= $t('enabled_feeds') ?> <span class="ftc-enabled-count"><?= count($enabledFeeds) ?></span>
+			</h3>
+			<p class="ftc-no-enabled"<?= $enabledFeeds !== [] ? ' hidden' : '' ?>><?= $t('no_enabled_feeds') ?></p>
+			<ul class="ftc-feed-list ftc-enabled-list">
+				<?php foreach ($enabledFeeds as $feed) { $renderFeed($feed); } ?>
+			</ul>
+
+			<details class="ftc-add-panel"<?= $enabledFeeds === [] ? ' open' : '' ?>>
+				<summary>
+					<?= $t('add_feeds') ?> <span class="ftc-add-count"><?= count($allFeeds) - count($enabledFeeds) ?></span>
+				</summary>
+				<p class="ftc-help"><?= $t('add_feeds_help') ?></p>
+				<input type="search" class="ftc-feed-filter" aria-label="<?= $t('filter_feeds') ?>"
+					placeholder="<?= $t('filter_feeds') ?>…" />
+				<p class="ftc-no-match" hidden><?= $t('no_match') ?></p>
+				<div class="ftc-add-list">
+					<?php foreach ($otherFeeds as $catName => $feeds): ?>
+						<div class="ftc-category">
+							<h4 class="ftc-category-name"><?= $esc($catName) ?></h4>
+							<ul class="ftc-feed-list">
+								<?php foreach ($feeds as $feed) { $renderFeed($feed); } ?>
+							</ul>
+						</div>
+					<?php endforeach; ?>
+				</div>
+			</details>
+
+			<div class="ftc-savebar">
+				<button type="submit" class="btn btn-important"><?= $t('save_feeds') ?></button>
+				<span class="ftc-dirty-note" hidden><?= $t('unsaved_changes') ?></span>
+			</div>
+		</form>
+		<?php endif; ?>
+	</section>
+
+	<hr />
+
+	<form method="post" action="<?= $configureUrl ?>">
+		<input type="hidden" name="_csrf" value="<?= $esc($csrf) ?>" />
 		<input type="hidden" name="fulltextcontent_action" value="save_global" />
 
 		<section>
-			<h2><?php echo _t('ext.fulltextcontent.config.global'); ?></h2>
+			<h2><?= $t('global') ?></h2>
 
 			<div class="form-group">
-				<label for="node_binary"><?php echo _t('ext.fulltextcontent.config.node_binary'); ?></label>
-				<input type="text" id="node_binary" name="node_binary"
-					value="<?php echo htmlspecialchars($nodeBinary, ENT_QUOTES); ?>"
-					placeholder="node" />
-				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.node_binary_help'); ?></p>
-			</div>
-
-			<div class="form-group">
-				<label for="obscura_download_url"><?php echo _t('ext.fulltextcontent.config.obscura_download_url'); ?></label>
-				<input type="text" id="obscura_download_url" name="obscura_download_url"
-					value="<?php echo htmlspecialchars($obscuraDownloadUrl, ENT_QUOTES); ?>"
-					placeholder="<?php echo htmlspecialchars($binaryResolver->defaultDownloadUrl(), ENT_QUOTES); ?>" />
-				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.obscura_download_url_help'); ?></p>
-			</div>
-
-			<div class="form-group">
-				<label for="obscura_binary"><?php echo _t('ext.fulltextcontent.config.obscura_binary'); ?></label>
-				<input type="text" id="obscura_binary" name="obscura_binary"
-					value="<?php echo htmlspecialchars($obscuraBinaryOverride, ENT_QUOTES); ?>"
-					placeholder="<?php echo htmlspecialchars($obscuraBinPath, ENT_QUOTES); ?>" />
-				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.obscura_binary_help'); ?></p>
-			</div>
-
-			<div class="form-group">
-				<label for="defuddle_version"><?php echo _t('ext.fulltextcontent.config.defuddle_version'); ?></label>
-				<input type="text" id="defuddle_version" name="defuddle_version"
-					value="<?php echo htmlspecialchars($defuddleVersion, ENT_QUOTES); ?>"
-					placeholder="latest" />
-				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.defuddle_version_help'); ?></p>
-			</div>
-
-			<div class="form-group">
-				<label for="defuddle_check_interval"><?php echo _t('ext.fulltextcontent.config.defuddle_check_interval'); ?></label>
-				<input type="number" id="defuddle_check_interval" name="defuddle_check_interval"
-					value="<?php echo (int) $checkInterval; ?>" min="1" />
-				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.defuddle_check_interval_help'); ?></p>
-			</div>
-
-			<div class="form-group">
-				<label for="fetch_timeout"><?php echo _t('ext.fulltextcontent.config.fetch_timeout'); ?></label>
+				<label for="fetch_timeout"><?= $t('fetch_timeout') ?></label>
 				<input type="number" id="fetch_timeout" name="fetch_timeout"
-					value="<?php echo (int) $fetchTimeout; ?>" min="5" />
-				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.fetch_timeout_help'); ?></p>
+					value="<?= (int) $fetchTimeout ?>" min="5" />
+				<p class="help-block"><?= $t('fetch_timeout_help') ?></p>
 			</div>
 
 			<div class="form-group">
 				<label for="allow_private_network">
 					<input type="checkbox" id="allow_private_network" name="allow_private_network" value="1"
-						<?php echo $allowPrivateNetwork ? 'checked' : ''; ?> />
-					<?php echo _t('ext.fulltextcontent.config.allow_private_network'); ?>
+						<?= $allowPrivateNetwork ? 'checked' : '' ?> />
+					<?= $t('allow_private_network') ?>
 				</label>
-				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.allow_private_network_help'); ?></p>
+				<p class="help-block"><?= $t('allow_private_network_help') ?></p>
 			</div>
 
 			<div class="form-group">
 				<label for="obscura_stealth_build">
 					<input type="checkbox" id="obscura_stealth_build" name="obscura_stealth_build" value="1"
-						<?php echo $obscuraStealthBuild ? 'checked' : ''; ?> />
-					<?php echo _t('ext.fulltextcontent.config.obscura_stealth_build'); ?>
+						<?= $obscuraStealthBuild ? 'checked' : '' ?> />
+					<?= $t('obscura_stealth_build') ?>
 				</label>
-				<p class="help-block"><?php echo _t('ext.fulltextcontent.config.obscura_stealth_build_help'); ?></p>
+				<p class="help-block"><?= $t('obscura_stealth_build_help') ?></p>
 			</div>
 
-			<button type="submit" class="btn btn-primary">
-				<?php echo _t('ext.fulltextcontent.config.save'); ?>
-			</button>
-		</section>
+			<details class="ftc-advanced">
+				<summary><?= $t('advanced') ?></summary>
 
+				<div class="form-group">
+					<label for="defuddle_version"><?= $t('defuddle_version') ?></label>
+					<input type="text" id="defuddle_version" name="defuddle_version"
+						value="<?= $esc($defuddleVersion) ?>" placeholder="latest" />
+					<p class="help-block"><?= $t('defuddle_version_help') ?></p>
+				</div>
+
+				<div class="form-group">
+					<label for="defuddle_check_interval"><?= $t('defuddle_check_interval') ?></label>
+					<input type="number" id="defuddle_check_interval" name="defuddle_check_interval"
+						value="<?= (int) $checkInterval ?>" min="1" />
+					<p class="help-block"><?= $t('defuddle_check_interval_help') ?></p>
+				</div>
+
+				<div class="form-group">
+					<label for="node_binary"><?= $t('node_binary') ?></label>
+					<input type="text" id="node_binary" name="node_binary"
+						value="<?= $esc($nodeBinary) ?>" placeholder="node" />
+					<p class="help-block"><?= $t('node_binary_help') ?></p>
+				</div>
+
+				<div class="form-group">
+					<label for="obscura_download_url"><?= $t('obscura_download_url') ?></label>
+					<input type="text" id="obscura_download_url" name="obscura_download_url"
+						value="<?= $esc($obscuraDownloadUrl) ?>"
+						placeholder="<?= $esc($binaryResolver->defaultDownloadUrl()) ?>" />
+					<p class="help-block"><?= $t('obscura_download_url_help') ?></p>
+				</div>
+
+				<div class="form-group">
+					<label for="obscura_binary"><?= $t('obscura_binary') ?></label>
+					<input type="text" id="obscura_binary" name="obscura_binary"
+						value="<?= $esc($obscuraBinaryOverride) ?>" placeholder="<?= $esc($obscuraBinPath) ?>" />
+					<p class="help-block"><?= $t('obscura_binary_help') ?></p>
+				</div>
+			</details>
+
+			<button type="submit" class="btn btn-important"><?= $t('save') ?></button>
+		</section>
 	</form>
 
 	<hr />
 
 	<section>
-		<h2><?php echo _t('ext.fulltextcontent.config.status'); ?></h2>
-
-		<?php foreach ($versionWarnings as $warning): ?>
-			<p class="alert alert-warn ftc-version-warning"><?php echo htmlspecialchars($warning, ENT_QUOTES); ?></p>
-		<?php endforeach; ?>
-		<?php foreach ($buildWarnings as $warning): ?>
-			<p class="alert alert-warn ftc-build-warning"><?php echo htmlspecialchars($warning, ENT_QUOTES); ?></p>
-		<?php endforeach; ?>
-		<?php if ($stealthWarning !== null): ?>
-			<p class="alert alert-warn ftc-stealth-warning"><?php echo htmlspecialchars($stealthWarning, ENT_QUOTES); ?></p>
-		<?php endif; ?>
+		<h2><?= $t('status') ?></h2>
 
 		<div class="ftc-table-scroll">
 		<table class="table">
 			<tbody>
 				<tr>
-					<th><?php echo _t('ext.fulltextcontent.config.obscura_status'); ?></th>
+					<th><?= $t('obscura_status') ?></th>
 					<td>
 						<?php if ($obscuraDownloaded): ?>
-							<code><?php echo htmlspecialchars($obscuraEffectivePath, ENT_QUOTES); ?></code>
+							<code><?= $esc($obscuraEffectivePath) ?></code>
 						<?php else: ?>
-							<em><?php echo _t('ext.fulltextcontent.config.obscura_not_downloaded'); ?></em>
+							<em><?= $t('obscura_not_downloaded') ?></em>
 						<?php endif; ?>
 					</td>
 				</tr>
 				<tr>
-					<th><?php echo _t('ext.fulltextcontent.config.obscura_build'); ?></th>
+					<th><?= $t('obscura_build') ?></th>
 					<td><?php
 						if ($obscuraBinaryOverride !== '') {
-							echo '<em>' . _t('ext.fulltextcontent.config.build_override') . '</em>';
+							echo '<em>' . $t('build_override') . '</em>';
 						} elseif ($installedBuild !== null) {
-							echo _t('ext.fulltextcontent.config.build_' . $installedBuild);
+							echo $t('build_' . $installedBuild);
 						} else {
-							echo '<em>' . _t('ext.fulltextcontent.config.obscura_not_downloaded') . '</em>';
+							echo '<em>' . $t('obscura_not_downloaded') . '</em>';
 						}
 					?></td>
 				</tr>
 				<tr>
-					<th><?php echo _t('ext.fulltextcontent.config.obscura_version'); ?></th>
-					<td><?php echo $obscuraVersion !== null ? htmlspecialchars($obscuraVersion, ENT_QUOTES) : '<em>' . _t('ext.fulltextcontent.config.obscura_not_downloaded') . '</em>'; ?></td>
+					<th><?= $t('obscura_version') ?></th>
+					<td><?= $obscuraVersion !== null ? $esc($obscuraVersion) : '<em>' . $t('obscura_not_downloaded') . '</em>' ?></td>
 				</tr>
 				<tr>
-					<th><?php echo _t('ext.fulltextcontent.config.defuddle_installed'); ?></th>
-					<td><?php echo $installedDefuddle !== null ? htmlspecialchars($installedDefuddle, ENT_QUOTES) : '<em>' . _t('ext.fulltextcontent.config.defuddle_not_installed') . '</em>'; ?></td>
+					<th><?= $t('defuddle_installed') ?></th>
+					<td><?= $installedDefuddle !== null ? $esc($installedDefuddle) : '<em>' . $t('defuddle_not_installed') . '</em>' ?></td>
 				</tr>
 				<tr>
-					<th><?php echo _t('ext.fulltextcontent.config.defuddle_latest_known'); ?></th>
-					<td><?php echo $latestDefuddle !== null ? htmlspecialchars($latestDefuddle, ENT_QUOTES) : '—'; ?></td>
+					<th><?= $t('defuddle_latest_known') ?></th>
+					<td><?= $latestDefuddle !== null ? $esc($latestDefuddle) : '—' ?></td>
 				</tr>
 				<tr>
-					<th><?php echo _t('ext.fulltextcontent.config.defuddle_last_check'); ?></th>
-					<td><?php echo $lastCheck !== null ? date('Y-m-d H:i:s', $lastCheck) : _t('ext.fulltextcontent.config.defuddle_never_checked'); ?></td>
+					<th><?= $t('defuddle_last_check') ?></th>
+					<td><?= $lastCheck !== null ? date('Y-m-d H:i:s', $lastCheck) : $t('defuddle_never_checked') ?></td>
 				</tr>
 			</tbody>
 		</table>
 		</div>
 
-		<form method="post" action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>" style="display:inline-block; margin-right: 0.5em;">
-			<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
-			<input type="hidden" name="fulltextcontent_action" value="update_defuddle" />
-			<button type="submit" class="btn btn-default">
-				<?php echo _t('ext.fulltextcontent.config.update_defuddle'); ?>
-			</button>
-		</form>
-
-		<form method="post" action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>" style="display:inline-block;">
-			<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
-			<input type="hidden" name="fulltextcontent_action" value="redownload_obscura" />
-			<button type="submit" class="btn btn-default">
-				<?php echo _t('ext.fulltextcontent.config.redownload_obscura'); ?>
-			</button>
-		</form>
-	</section>
-
-	<hr />
-
-	<section>
-		<h2><?php echo _t('ext.fulltextcontent.config.per_feed'); ?></h2>
-		<p><?php echo _t('ext.fulltextcontent.config.per_feed_help'); ?></p>
-
-		<form method="post" action="<?php echo _url('extension', 'configure', 'e', urlencode($this->getName())); ?>">
-			<input type="hidden" name="_csrf" value="<?php echo FreshRSS_Auth::csrfToken(); ?>" />
-			<input type="hidden" name="fulltextcontent_action" value="save_feeds" />
-
-			<?php if (empty($categories)): ?>
-				<p><?php echo _t('ext.fulltextcontent.config.no_feeds'); ?></p>
-			<?php else: ?>
-				<?php foreach ($categories as $catName => $feeds): ?>
-					<fieldset>
-						<legend><?php echo htmlspecialchars($catName, ENT_QUOTES); ?></legend>
-						<div class="ftc-table-scroll">
-						<table class="table">
-							<thead>
-								<tr>
-									<th><?php echo _t('ext.fulltextcontent.config.col_feed'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.col_enabled'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.col_wait'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.col_wait_until'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.col_selector'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.col_stealth'); ?></th>
-									<th><?php echo _t('ext.fulltextcontent.config.col_timeout'); ?></th>
-								</tr>
-							</thead>
-							<tbody>
-								<?php foreach ($feeds as $feed): ?>
-									<?php
-										$fid       = (int) $feed->id();
-										$enabled   = $feed->attributeBoolean('fulltextcontent_enabled');
-										$wait      = (int) ($feed->attributeInt('fulltextcontent_wait') ?? 0);
-										$waitUntil = (string) ($feed->attributeString('fulltextcontent_wait_until') ?? '');
-										$selector  = (string) ($feed->attributeString('fulltextcontent_selector') ?? '');
-										$stealth   = (bool) ($feed->attributeBoolean('fulltextcontent_stealth') ?? false);
-										$timeout   = (int) ($feed->attributeInt('fulltextcontent_timeout') ?? 0);
-									?>
-									<tr>
-										<td>
-											<label for="feed_<?php echo $fid; ?>">
-												<?php echo htmlspecialchars($feed->name(), ENT_QUOTES); ?>
-											</label>
-										</td>
-										<td style="text-align:center;">
-											<input type="checkbox"
-												name="fulltextcontent_feeds[]"
-												id="feed_<?php echo $fid; ?>"
-												value="<?php echo $fid; ?>"
-												<?php echo $enabled ? 'checked' : ''; ?> />
-										</td>
-										<td>
-											<input type="number"
-												name="fulltextcontent_wait[<?php echo $fid; ?>]"
-												value="<?php echo $wait > 0 ? $wait : ''; ?>"
-												min="1" placeholder="—"
-												style="width:4em;" />
-										</td>
-										<td>
-											<select name="fulltextcontent_wait_until[<?php echo $fid; ?>]">
-												<option value="">— (load)</option>
-												<?php foreach ($waitUntilOptions as $opt): ?>
-													<option value="<?php echo $opt; ?>" <?php echo $waitUntil === $opt ? 'selected' : ''; ?>>
-														<?php echo $opt; ?>
-													</option>
-												<?php endforeach; ?>
-											</select>
-										</td>
-										<td>
-											<input type="text"
-												name="fulltextcontent_selector[<?php echo $fid; ?>]"
-												value="<?php echo htmlspecialchars($selector, ENT_QUOTES); ?>"
-												placeholder="—"
-												style="width:10em;" />
-										</td>
-										<td style="text-align:center;">
-											<input type="checkbox"
-												name="fulltextcontent_stealth[]"
-												value="<?php echo $fid; ?>"
-												<?php echo $stealth ? 'checked' : ''; ?> />
-										</td>
-										<td>
-											<input type="number"
-												name="fulltextcontent_timeout[<?php echo $fid; ?>]"
-												value="<?php echo $timeout > 0 ? $timeout : ''; ?>"
-												min="1" placeholder="—"
-												style="width:4em;" />
-										</td>
-									</tr>
-								<?php endforeach; ?>
-							</tbody>
-						</table>
-						</div>
-					</fieldset>
-				<?php endforeach; ?>
-
-				<button type="submit" class="btn btn-primary" style="margin-top: 1em;">
-					<?php echo _t('ext.fulltextcontent.config.save'); ?>
-				</button>
-			<?php endif; ?>
-
-		</form>
+		<div class="ftc-maintenance">
+			<form method="post" action="<?= $configureUrl ?>">
+				<input type="hidden" name="_csrf" value="<?= $esc($csrf) ?>" />
+				<input type="hidden" name="fulltextcontent_action" value="update_defuddle" />
+				<button type="submit" class="btn"><?= $t('update_defuddle') ?></button>
+			</form>
+			<form method="post" action="<?= $configureUrl ?>">
+				<input type="hidden" name="_csrf" value="<?= $esc($csrf) ?>" />
+				<input type="hidden" name="fulltextcontent_action" value="redownload_obscura" />
+				<button type="submit" class="btn"><?= $t('redownload_obscura') ?></button>
+			</form>
+		</div>
 	</section>
 
 </div>

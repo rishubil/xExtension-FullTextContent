@@ -33,6 +33,11 @@ final class FullTextContentExtension extends Minz_Extension {
 		}
 	}
 
+	/** Lets the controller translate its messages (registerTranslates() is protected). */
+	public function loadTranslations(): void {
+		$this->registerTranslates();
+	}
+
 	public function addRefetchButton(FreshRSS_Entry $entry): FreshRSS_Entry {
 		$this->registerTranslates();
 
@@ -47,8 +52,15 @@ final class FullTextContentExtension extends Minz_Extension {
 			'params' => ['id' => (string) $entry->id()],
 		]);
 
+		// script.js has no access to FreshRSS translations; hand them over.
+		$strings = htmlspecialchars((string) json_encode([
+			'fetching' => _t('ext.fulltextcontent.ui.fetching'),
+			'success'  => _t('ext.fulltextcontent.ui.success'),
+			'error'    => _t('ext.fulltextcontent.ui.error'),
+		]), ENT_QUOTES);
+
 		$entry->_content(
-			'<div class="ftc-refetch">'
+			'<div class="ftc-refetch" data-strings="' . $strings . '">'
 			. '<a class="btn" href="' . $url . '">'
 			. _t('ext.fulltextcontent.ui.refetch_button')
 			. '</a>'

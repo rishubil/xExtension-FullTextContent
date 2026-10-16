@@ -29,6 +29,7 @@ final class DefuddleManager {
 		string $registryUrl = self::DEFAULT_REGISTRY_URL
 	) {
 		$this->dataDir = rtrim($dataDir, '/');
+		$configuredVersion = trim($configuredVersion);
 		$this->configuredVersion = $configuredVersion !== '' ? $configuredVersion : 'latest';
 		$this->checkIntervalHours = max(1, $checkIntervalHours);
 		$this->registryUrl = $registryUrl;
@@ -69,6 +70,11 @@ final class DefuddleManager {
 		}
 		$data = json_decode((string) file_get_contents($pkgJson), true);
 		return is_array($data) ? ($data['version'] ?? null) : null;
+	}
+
+	/** The configured version spec; an empty setting means "latest". */
+	public function configuredVersion(): string {
+		return $this->configuredVersion;
 	}
 
 	public function latestKnownVersion(): ?string {

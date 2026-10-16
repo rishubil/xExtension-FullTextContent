@@ -51,3 +51,30 @@ test('refetch returns 404 for an unknown entry', async ({ page }) => {
   const res = await page.request.post('/i/?c=fullTextContent&a=refetch&id=999999999', { form: { _csrf: csrf } });
   expect(await res.json()).toMatchObject({ status: 404 });
 });
+
+test('preview rejects unauthenticated and CSRF-less requests without fetching', async ({ page, request, playwright, baseURL }) => {
+  const { feedId, itemId } = await feedWithItem(page, request, 'counter');
+  const before = await fixtureHits(request, itemId);
+  const preview = '/i/?c=fullTextContent&a=preview';
+
+  const anonymous = await playwright.request.newContext({ baseURL });
+  const res = await anonymous.post(preview, { form: { feed: feedId }, maxRedirects: 0 });
+  expect(res.status()).toBe(302);
+  expect(res.headers()['location']).toContain('c=error');
+  await anonymous.dispose();
+
+  const bad = await page.request.post(preview, { form: { _csrf: 'invalid', feed: feedId }, maxRedirects: 0 });
+  expect(bad.status()).toBe(302);
+  expect(bad.headers()['location']).toContain('c=error');
+
+  expect(await fixtureHits(request, itemId)).toBe(before);
+});
+
+test('preview only tests http(s) URLs', async ({ page, request }) => {
+  const { feedId } = await feedWithItem(page, request, 'standard');
+  await page.goto('/i/');
+  const csrf = await csrfToken(page);
+  const res = await page.request.post('/i/?c=fullTextContent&a=preview',
+    { form: { _csrf: csrf, feed: feedId, url: 'file:///etc/passwd' } });
+  expect(await res.json()).toMatchObject({ status: 400 });
+});

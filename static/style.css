@@ -27,3 +27,214 @@
 .extension-configure fieldset {
 	min-width: 0;
 }
+
+/* ---- Configure page ---------------------------------------------------- */
+.ftc-configure .ftc-help {
+	margin: 0.25em 0 0;
+	font-size: 0.875em;
+	opacity: 0.75;
+}
+.ftc-enabled-heading .ftc-enabled-count,
+.ftc-add-panel .ftc-add-count {
+	display: inline-block;
+	min-width: 1.5em;
+	padding: 0 0.4em;
+	border-radius: 1em;
+	background: rgba(127, 127, 127, 0.2);
+	font-size: 0.85em;
+	text-align: center;
+}
+.ftc-enabled-list {
+	border: 1px solid rgba(127, 127, 127, 0.35);
+	border-radius: 4px;
+}
+.ftc-enabled-list:empty {
+	display: none;
+}
+.ftc-enabled-list > .ftc-feed:first-child {
+	border-top: none;
+}
+.ftc-add-panel {
+	margin: 1.25em 0 1em;
+}
+.ftc-add-panel > summary {
+	cursor: pointer;
+	font-weight: bold;
+	font-size: 1.1em;
+}
+.ftc-add-panel .ftc-feed-filter {
+	width: 100%;
+	max-width: 24em;
+	margin: 0.5em 0;
+	box-sizing: border-box;
+}
+.ftc-add-list {
+	max-height: 28em;
+	overflow-y: auto;
+	border: 1px solid rgba(127, 127, 127, 0.35);
+	border-radius: 4px;
+}
+.ftc-add-list .ftc-category-name {
+	margin: 0;
+	padding: 0.4em 0.75em;
+	font-size: 0.9em;
+	background: rgba(127, 127, 127, 0.12);
+}
+/* Options are configured once a feed is enabled (it then moves up). */
+.ftc-add-list .ftc-feed-options,
+.ftc-add-list .ftc-feed-site {
+	display: none;
+}
+.ftc-add-list .ftc-feed {
+	padding: 0.3em 0.75em;
+}
+.ftc-feed-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.ftc-feed {
+	padding: 0.5em 0.75em;
+	border-top: 1px solid rgba(127, 127, 127, 0.2);
+}
+.ftc-feed-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25em 1em;
+}
+.ftc-feed-toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	flex: 1 1 auto;
+	min-width: 0;
+	cursor: pointer;
+}
+.ftc-feed-toggle .favicon {
+	width: 16px;
+	height: 16px;
+	flex: none;
+}
+.ftc-feed-name {
+	overflow-wrap: anywhere;
+}
+.ftc-feed.ftc-enabled .ftc-feed-name {
+	font-weight: bold;
+}
+.ftc-feed-site {
+	font-size: 0.875em;
+	white-space: nowrap;
+}
+.ftc-feed-options {
+	margin: 0.25em 0 0 1.6em;
+	font-size: 0.875em;
+}
+.ftc-feed-options > summary {
+	cursor: pointer;
+	opacity: 0.8;
+}
+.ftc-feed:not(.ftc-enabled) .ftc-feed-options > summary {
+	opacity: 0.55;
+}
+.ftc-feed-options[open] > summary {
+	opacity: 1;
+}
+.ftc-options-label {
+	font-weight: bold;
+}
+.ftc-options-panel {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 20em), 1fr));
+	gap: 1em 1.5em;
+	margin: 0.75em 0;
+	font-size: 1.1em;
+}
+.ftc-option label {
+	display: block;
+	font-weight: bold;
+	margin-bottom: 0.25em;
+}
+.ftc-option input[type="text"],
+.ftc-option input[type="number"],
+.ftc-option select {
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+.ftc-option-wide {
+	grid-column: 1 / -1;
+}
+.ftc-option .ftc-checkbox-label {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+.ftc-test {
+	margin-bottom: 0.5em;
+	padding-top: 0.75em;
+	border-top: 1px dashed rgba(127, 127, 127, 0.35);
+	font-size: 1.1em;
+}
+.ftc-test-title {
+	margin: 0 0 0.4em;
+	font-weight: bold;
+}
+.ftc-test-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em;
+}
+.ftc-test-controls .ftc-test-url {
+	flex: 1 1 14em;
+	min-width: 0;
+}
+.ftc-test-result {
+	margin-top: 0.5em;
+}
+.ftc-test-result.ftc-error {
+	color: #c0392b;
+}
+.ftc-test-result.ftc-loading {
+	opacity: 0.75;
+}
+.ftc-test-preview {
+	width: 100%;
+	height: 16em;
+	resize: vertical;
+	border: 1px solid rgba(127, 127, 127, 0.35);
+	border-radius: 4px;
+	background: #fff;
+}
+.ftc-savebar {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: 1em;
+	padding: 0.6em 0;
+	background: inherit;
+	background-color: var(--background-color-light, var(--background-color, #fff));
+	border-top: 1px solid rgba(127, 127, 127, 0.35);
+}
+.ftc-dirty-note {
+	font-weight: bold;
+	color: #b9770e;
+}
+.ftc-advanced {
+	margin: 1em 0;
+}
+.ftc-advanced > summary {
+	cursor: pointer;
+	font-weight: bold;
+	margin-bottom: 0.75em;
+}
+.ftc-maintenance {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em;
+}
+.ftc-configure [hidden] {
+	display: none !important;
+}
